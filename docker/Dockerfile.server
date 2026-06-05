@@ -1,0 +1,10 @@
+FROM golang:1.23-alpine AS builder
+WORKDIR /build
+COPY go/ ./
+RUN go build -o arena-server ./cmd/arena-server
+
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates
+COPY --from=builder /build/arena-server /usr/local/bin/arena-server
+EXPOSE 9090
+ENTRYPOINT ["arena-server"]

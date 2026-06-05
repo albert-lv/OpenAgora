@@ -1,0 +1,33 @@
+name: Python CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: '0.4.x'
+      - name: Install Python
+        run: uv python install ${{ matrix.python-version }}
+      - name: Sync SDK
+        run: cd python/arena-sdk && uv sync
+      - name: Test SDK
+        run: cd python/arena-sdk && uv run pytest
+      - name: Sync verl
+        run: cd python/arena-verl && uv sync
+      - name: Test verl
+        run: cd python/arena-verl && uv run pytest
+      - name: Sync verify
+        run: cd python/arena-verify && uv sync
+      - name: Test verify
+        run: cd python/arena-verify && uv run pytest

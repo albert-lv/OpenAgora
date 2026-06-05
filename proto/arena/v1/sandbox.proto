@@ -1,0 +1,30 @@
+syntax = "proto3";
+package arena.v1;
+
+import "google/protobuf/timestamp.proto";
+
+message SandboxCreateRequest {
+  string image = 1;
+  string memory = 2;
+  double cpus = 3;
+  map<string, string> env_vars = 4;
+  bytes task_file = 5;
+  int32 timeout_seconds = 6;
+}
+
+message SandboxCreateResponse {
+  string sandbox_id = 1;
+  string status = 2;  // "creating", "running", "stopped", "destroyed"
+}
+
+message SandboxLifecycle {
+  string sandbox_id = 1;
+  string status = 2;
+  google.protobuf.Timestamp ts = 3;
+}
+
+message ExecResult {
+  int32 exit_code = 1;
+  bytes stdout = 2;
+  bytes stderr = 3;
+}

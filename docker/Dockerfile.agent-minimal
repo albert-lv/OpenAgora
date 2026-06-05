@@ -1,0 +1,25 @@
+FROM python:3.12-slim
+
+WORKDIR /sandbox
+
+# Minimal agent — reads task.json, loops on LLM calls, writes done on completion
+COPY <<'EOF' /sandbox/agent.py
+import json, os, sys, time
+
+def main():
+    task_path = "/sandbox/.arena/task.json"
+    with open(task_path) as f:
+        task = json.load(f)
+    print(f"Task: {task.get('description', 'no description')}")
+    # TODO: implement agent logic
+    time.sleep(1)
+    # Signal completion
+    os.makedirs("/sandbox/.arena", exist_ok=True)
+    with open("/sandbox/.arena/done", "w") as f:
+        f.write(json.dumps({"status": "success"}))
+
+if __name__ == "__main__":
+    main()
+EOF
+
+ENTRYPOINT ["python", "/sandbox/agent.py"]

@@ -1,0 +1,9 @@
+{
+  "task_id": "quickstart-hello",
+  "description": "Write a Python function that returns the sum of two numbers.",
+  "sandbox_image": "arena-agent-minimal:latest",
+  "llm_backend": "http://localhost:8000/v1",
+  "verify": {
+    "command": "python -c \"import solution; assert solution.add(1,2)==3\""
+  }
+}

@@ -1,0 +1,124 @@
+syntax = "proto3";
+package arena.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service ArenaService {
+  rpc CreateRollout(CreateRolloutRequest) returns (CreateRolloutResponse);
+  rpc GetRollout(GetRolloutRequest) returns (Rollout);
+  rpc StopRollout(StopRolloutRequest) returns (StopRolloutResponse);
+  rpc ListRollouts(ListRolloutsRequest) returns (ListRolloutsResponse);
+  rpc StreamTrajectory(StreamTrajectoryRequest) returns (stream TrajectoryStep);
+  rpc GetTrajectory(GetTrajectoryRequest) returns (Trajectory);
+}
+
+message CreateRolloutRequest {
+  string task_id = 1;
+  SandboxConfig sandbox = 2;
+  SamplingConfig sampling = 3;
+  VerifyConfig verify = 4;
+  string llm_backend = 5;
+}
+
+message CreateRolloutResponse {
+  string rollout_id = 1;
+}
+
+message GetRolloutRequest {
+  string rollout_id = 1;
+}
+
+message StopRolloutRequest {
+  string rollout_id = 1;
+}
+
+message StopRolloutResponse {}
+
+message ListRolloutsRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+}
+
+message ListRolloutsResponse {
+  repeated Rollout rollouts = 1;
+}
+
+message Rollout {
+  string rollout_id = 1;
+  string task_id = 2;
+  string status = 3;  // "pending", "running", "success", "failed", "stopped"
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp finished_at = 5;
+  float reward = 6;
+}
+
+message StreamTrajectoryRequest {
+  string rollout_id = 1;
+}
+
+message GetTrajectoryRequest {
+  string rollout_id = 1;
+}
+
+message Trajectory {
+  repeated TrajectoryStep steps = 1;
+}
+
+message SandboxConfig {
+  string image = 1;
+  string memory = 2;
+  double cpus = 3;
+  map<string, string> env_vars = 4;
+  bytes task_file = 5;
+  int32 timeout_seconds = 6;
+}
+
+message SamplingConfig {
+  float temperature = 1;
+  float top_p = 2;
+  int64 seed = 3;
+  int32 max_tokens_budget = 4;
+}
+
+message VerifyConfig {
+  string command = 1;
+  string log_parser = 2;
+  repeated string pass_to_pass = 3;
+  repeated string fail_to_pass = 4;
+}
+
+message TrajectoryStep {
+  string rollout_id = 1;
+  int32 step_id = 2;
+  google.protobuf.Timestamp ts = 3;
+  LLMRequest request = 4;
+  LLMResponse response = 5;
+  repeated Reward rewards = 6;
+  map<string, string> metadata = 7;
+}
+
+message LLMRequest {
+  string endpoint = 1;
+  string model = 2;
+  bytes messages_json = 3;
+  bytes tools_json = 4;
+  SamplingConfig sampling = 5;
+}
+
+message LLMResponse {
+  bytes choices_json = 1;
+  Usage usage = 2;
+  bytes logprobs_json = 3;
+}
+
+message Reward {
+  string type = 1;
+  float value = 2;
+  string source = 3;
+  bytes detail_json = 4;
+}
+
+message Usage {
+  int32 prompt_tokens = 1;
+  int32 completion_tokens = 2;
+}
