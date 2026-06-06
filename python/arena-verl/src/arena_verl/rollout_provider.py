@@ -71,7 +71,7 @@ class ArenaRolloutProvider:
         task_id = f"batch-{index}"
         verify = {"command": self.verify_command} if self.verify_command else None
 
-        rollout_id = self.client.create_rollout(
+        rollout = self.client.create_rollout(
             task_id=task_id,
             image=self.sandbox_image,
             llm_backend=self.llm_backend,
@@ -79,6 +79,7 @@ class ArenaRolloutProvider:
             verify=verify,
             task_file=prompt.encode("utf-8"),
         )
+        rollout_id = rollout["rollout_id"]
 
         # Wait for completion.
         info = self.client.wait(rollout_id)

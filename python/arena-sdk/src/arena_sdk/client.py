@@ -64,7 +64,11 @@ class ArenaClient:
             llm_backend=llm_backend,
         )
         resp = self.stub.CreateRollout(req)
-        return resp.rollout_id
+        return {
+            "rollout_id": resp.rollout_id,
+            "proxy_url": resp.proxy_url,
+            "token": resp.token,
+        }
 
     def get_rollout(self, rollout_id: str) -> dict:
         """Get the current status of a rollout."""

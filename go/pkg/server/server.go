@@ -202,7 +202,8 @@ func (s *ArenaServer) CreateRollout(ctx context.Context, req *arena_pb.CreateRol
 	// 7. Background goroutine: wait for completion, verify, update state.
 	go s.runLifecycle(rolloutID, sb.ID, token, ps, req.Verify)
 
-	return &arena_pb.CreateRolloutResponse{RolloutId: rolloutID}, nil
+	proxyURL := fmt.Sprintf("http://%s/v1", proxyAddr)
+	return &arena_pb.CreateRolloutResponse{RolloutId: rolloutID, ProxyUrl: proxyURL, Token: token}, nil
 }
 
 // runLifecycle waits for the sandbox to finish, runs verification, and updates state.

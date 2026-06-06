@@ -24,6 +24,8 @@ message CreateRolloutRequest {
 
 message CreateRolloutResponse {
   string rollout_id = 1;
+  string proxy_url = 2;   // e.g. "http://127.0.0.1:12345/v1"
+  string token = 3;       // Authorization Bearer token for the proxy
 }
 
 message GetRolloutRequest {
