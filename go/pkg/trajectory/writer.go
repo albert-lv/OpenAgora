@@ -2,7 +2,6 @@ package trajectory
 
 import (
 	"context"
-	"fmt"
 )
 
 // Writer is the interface for append-only trajectory storage.

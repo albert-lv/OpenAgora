@@ -1,8 +1,6 @@
 package main
 
 import (
-	"context"
-	"log"
 	"net"
 	"os"
 	"os/signal"
@@ -19,7 +17,7 @@ func main() {
 	defer logger.Sync()
 
 	s := grpc.NewServer()
-	arena_pb.RegisterArenaServiceServer(s, server.New(logger))
+	arena_pb.RegisterArenaServiceServer(s, server.New(logger, nil))
 
 	lis, err := net.Listen("tcp", ":9090")
 	if err != nil {

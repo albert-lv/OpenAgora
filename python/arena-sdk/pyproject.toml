@@ -23,4 +23,4 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/arena_sdk"]
+packages = ["src/arena_sdk", "src/arena"]
