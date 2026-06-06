@@ -25,6 +25,10 @@ docker-server:
 docker-agent:
 	docker build -t arena-agent-minimal:latest -f docker/Dockerfile.agent-minimal .
 
+.PHONY: docker-swe-agent
+docker-swe-agent:
+	docker build -t arena-swe-agent:latest -f docker/Dockerfile.swe-agent .
+
 # Python 开发
 .PHONY: sdk-install
 sdk-install:

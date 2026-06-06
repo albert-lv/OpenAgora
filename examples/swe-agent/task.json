@@ -1,0 +1,9 @@
+{
+  "task_id": "swe-bench/django-12345",
+  "description": "Fix the bug where QuerySet.annotate() fails when using a Subquery with an OuterRef that references an annotated field. The error occurs because the OuterRef resolution does not correctly handle annotations added by a previous annotate() call in the same query.",
+  "repository": "https://github.com/django/django",
+  "commit": "abc123def456",
+  "test_command": "python -m pytest tests/db/models/test_query.py -k annotate_subquery",
+  "sandbox_image": "arena-swe-agent:latest",
+  "llm_backend": "http://localhost:8000/v1"
+}
