@@ -246,7 +246,17 @@ func (p *Proxy) nonStreamResponse(w http.ResponseWriter, respBody io.Reader, rs 
 		}
 	}
 
-	p.recordStep(rs, reqBody, respBytes, promptTokens, completionTokens)
+	// Extract logprobs from the first choice.
+	var logprobsBytes []byte
+	if choices, ok := respMap["choices"].([]any); ok && len(choices) > 0 {
+		if choice, ok := choices[0].(map[string]any); ok {
+			if logprobs, ok := choice["logprobs"]; ok && logprobs != nil {
+				logprobsBytes, _ = json.Marshal(logprobs)
+			}
+		}
+	}
+
+	p.recordStep(rs, reqBody, respBytes, promptTokens, completionTokens, logprobsBytes)
 
 	if rs.BudgetLimit > 0 {
 		_, _, over := p.addUsage(rs.Token, promptTokens, completionTokens)
@@ -324,6 +334,7 @@ func (p *Proxy) streamResponse(w http.ResponseWriter, respBody io.Reader, rs *Ro
 	}
 
 	// Build a synthetic response for trajectory capture.
+	var logprobsBytes []byte
 	syntheticResp := map[string]any{
 		"choices": []any{
 			map[string]any{
@@ -351,6 +362,14 @@ func (p *Proxy) streamResponse(w http.ResponseWriter, respBody io.Reader, rs *Ro
 					completionTokens = int(v)
 				}
 			}
+			// Also try to extract logprobs from the last chunk.
+			if choices, ok := chunk["choices"].([]any); ok && len(choices) > 0 {
+				if choice, ok := choices[0].(map[string]any); ok {
+					if logprobs, ok := choice["logprobs"]; ok && logprobs != nil {
+						logprobsBytes, _ = json.Marshal(logprobs)
+					}
+				}
+			}
 		}
 		syntheticResp["usage"] = map[string]any{
 			"prompt_tokens":     promptTokens,
@@ -359,7 +378,7 @@ func (p *Proxy) streamResponse(w http.ResponseWriter, respBody io.Reader, rs *Ro
 	}
 
 	syntheticBytes, _ := json.Marshal(syntheticResp)
-	p.recordStep(rs, reqBody, syntheticBytes, promptTokens, completionTokens)
+	p.recordStep(rs, reqBody, syntheticBytes, promptTokens, completionTokens, logprobsBytes)
 
 	if rs.BudgetLimit > 0 {
 		_, _, over := p.addUsage(rs.Token, promptTokens, completionTokens)
@@ -420,7 +439,8 @@ func (p *Proxy) newBackendRequest(r *http.Request, body []byte, backend *url.URL
 	return req, nil
 }
 
-// injectSampling rewrites the request JSON to enforce per-rollout sampling params.
+// injectSampling rewrites the request JSON to enforce per-rollout sampling params
+// and to request logprobs (needed for RL training).
 func injectSampling(body []byte, sampling *trajectory.SamplingConfig) ([]byte, error) {
 	if sampling == nil {
 		return body, nil
@@ -438,13 +458,11 @@ func injectSampling(body []byte, sampling *trajectory.SamplingConfig) ([]byte, e
 	if sampling.Seed != 0 {
 		req["seed"] = sampling.Seed
 	}
-	if sampling.MaxTokensBudget > 0 {
-		// Cap max_tokens to remaining budget if present; otherwise leave as-is.
-		if _, hasMaxTokens := req["max_tokens"]; hasMaxTokens {
-			// We'll enforce budget at proxy level rather than rewriting max_tokens
-			// to avoid interfering with agent's intent.
-			_ = hasMaxTokens
-		}
+	// Inject logprobs=true so the backend returns token-level probabilities.
+	// vLLM, SGLang and OpenAI-compatible APIs all support this parameter.
+	req["logprobs"] = true
+	if _, hasTopLogprobs := req["top_logprobs"]; !hasTopLogprobs {
+		req["top_logprobs"] = 5
 	}
 	return json.Marshal(req)
 }
@@ -460,7 +478,7 @@ func extractBearerToken(r *http.Request) string {
 }
 
 // recordStep writes a trajectory step for the captured interaction.
-func (p *Proxy) recordStep(rs *RolloutState, reqBody, respBody []byte, promptTokens, completionTokens int) {
+func (p *Proxy) recordStep(rs *RolloutState, reqBody, respBody []byte, promptTokens, completionTokens int, logprobs []byte) {
 	step := &trajectory.Step{
 		RolloutID: rs.RolloutID,
 		StepID:    0, // Will be assigned by writer or server.
@@ -471,11 +489,12 @@ func (p *Proxy) recordStep(rs *RolloutState, reqBody, respBody []byte, promptTok
 			Sampling: rs.Sampling,
 		},
 		Response: &trajectory.LLMResponse{
-			Choices: respBody,
+			Choices:  respBody,
 			Usage: &trajectory.Usage{
 				PromptTokens:     promptTokens,
 				CompletionTokens: completionTokens,
 			},
+			Logprobs: logprobs,
 		},
 	}
 	if err := p.writer.Write(context.TODO(), step); err != nil {
