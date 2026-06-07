@@ -90,7 +90,7 @@ func New(logger *zap.Logger, cfg *ServerConfig) *ArenaServer {
 	// Setup sandbox provider default.
 	sbProvider := cfg.SandboxProvider
 	if sbProvider == nil {
-		// Will be nil if docker is not available; callers should provide one.
+		logger.Warn("sandbox provider not configured; CreateRollout will fail")
 	}
 
 	// Setup proxy default.
@@ -170,7 +170,7 @@ func (s *ArenaServer) CreateRollout(ctx context.Context, req *arena_pb.CreateRol
 	sb, err := s.sandboxProvider.Create(ctx, sbConfig)
 	if err != nil {
 		s.proxy.UnregisterRollout(token)
-		ps.Close()
+		_ = ps.Close()
 		return nil, fmt.Errorf("sandbox create: %w", err)
 	}
 
@@ -181,7 +181,7 @@ func (s *ArenaServer) CreateRollout(ctx context.Context, req *arena_pb.CreateRol
 	if err := s.sandboxProvider.Start(ctx, sb.ID); err != nil {
 		s.proxy.UnregisterRollout(token)
 		_ = s.sandboxProvider.Destroy(ctx, sb.ID)
-		ps.Close()
+		_ = ps.Close()
 		return nil, fmt.Errorf("sandbox start: %w", err)
 	}
 

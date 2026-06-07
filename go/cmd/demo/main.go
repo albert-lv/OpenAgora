@@ -27,24 +27,24 @@ func main() {
 		SandboxProvider: mock.NewProvider(),
 	}))
 	lis, _ := net.Listen("tcp", "127.0.0.1:9090")
-	go grpcSvr.Serve(lis)
+	go func() { _ = grpcSvr.Serve(lis) }()
 	fmt.Println("Arena gRPC: 127.0.0.1:9090")
 
 	// 2. Start mock LLM backend.
 	llmMux := http.NewServeMux()
 	llmMux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"choices": []any{map[string]any{"message": map[string]any{"content": "print('hello')"}}},
 			"usage":   map[string]any{"prompt_tokens": 12, "completion_tokens": 6},
 		})
 	})
 	llmLis, _ := net.Listen("tcp", "127.0.0.1:0")
-	go http.Serve(llmLis, llmMux)
+	go func() { _ = http.Serve(llmLis, llmMux) }()
 	llmURL := fmt.Sprintf("http://%s/v1", llmLis.Addr().String())
 	fmt.Println("Mock LLM:", llmURL)
 
 	// 3. Create gRPC client.
-	conn, _ := grpc.Dial("127.0.0.1:9090", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, _ := grpc.NewClient("127.0.0.1:9090", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	client := arena_pb.NewArenaServiceClient(conn)
 	ctx := context.Background()
 
@@ -66,8 +66,8 @@ func main() {
 		req.Header.Set("Authorization", "Bearer "+resp.Token)
 		req.Header.Set("Content-Type", "application/json")
 		r, _ := http.DefaultClient.Do(req)
-		io.Copy(io.Discard, r.Body)
-		r.Body.Close()
+		_, _ = io.Copy(io.Discard, r.Body)
+		_ = r.Body.Close()
 		fmt.Printf("Agent call %d: %s\n", i+1, r.Status)
 	}
 

@@ -3,6 +3,7 @@ package proxy
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -153,7 +154,7 @@ func (p *Proxy) handleChatCompletions(w http.ResponseWriter, r *http.Request, rs
 		http.Error(w, `{"error":"read body"}`, http.StatusBadRequest)
 		return
 	}
-	r.Body.Close()
+	_ = r.Body.Close()
 
 	// 1. Inject sampling parameters.
 	body, err = injectSampling(body, rs.Sampling)
@@ -169,7 +170,7 @@ func (p *Proxy) handleChatCompletions(w http.ResponseWriter, r *http.Request, rs
 		p.mu.RUnlock()
 		if used >= rs.BudgetLimit {
 			w.WriteHeader(http.StatusTooManyRequests)
-			io.WriteString(w, fmt.Sprintf(`{"error":"token budget exhausted: %d/%d"}`, used, rs.BudgetLimit))
+			_, _ = io.WriteString(w, fmt.Sprintf(`{"error":"token budget exhausted: %d/%d"}`, used, rs.BudgetLimit))
 			return
 		}
 	}
@@ -204,7 +205,7 @@ func (p *Proxy) handleChatCompletions(w http.ResponseWriter, r *http.Request, rs
 		http.Error(w, `{"error":"backend unreachable"}`, http.StatusBadGateway)
 		return
 	}
-	defer backendResp.Body.Close()
+	defer func() { _ = backendResp.Body.Close() }()
 
 	// Copy headers except those managed by Go's HTTP server.
 	for k, vv := range backendResp.Header {
@@ -229,7 +230,7 @@ func (p *Proxy) nonStreamResponse(w http.ResponseWriter, respBody io.Reader, rs 
 		return
 	}
 
-	w.Write(respBytes)
+	_, _ = w.Write(respBytes)
 
 	// Extract usage.
 	var respMap map[string]any
@@ -261,7 +262,7 @@ func (p *Proxy) streamResponse(w http.ResponseWriter, respBody io.Reader, rs *Ro
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		p.logger.Error("streaming not supported by ResponseWriter")
-		io.Copy(w, respBody)
+		_, _ = io.Copy(w, respBody)
 		return
 	}
 
@@ -274,19 +275,19 @@ func (p *Proxy) streamResponse(w http.ResponseWriter, respBody io.Reader, rs *Ro
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data: ") {
 			// Write non-data lines (e.g., empty lines) as-is.
-			fmt.Fprintln(w, line)
+			_, _ = fmt.Fprintln(w, line)
 			flusher.Flush()
 			continue
 		}
 
 		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
-			fmt.Fprintln(w, line)
+			_, _ = fmt.Fprintln(w, line)
 			flusher.Flush()
 			continue
 		}
 
-		fmt.Fprintln(w, line)
+		_, _ = fmt.Fprintln(w, line)
 		flusher.Flush()
 
 		var chunk map[string]any
@@ -376,7 +377,7 @@ func (p *Proxy) proxyPlain(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"read body"}`, http.StatusBadRequest)
 		return
 	}
-	r.Body.Close()
+	_ = r.Body.Close()
 
 	backendReq, err := p.newBackendRequest(r, body, p.backend)
 	if err != nil {
@@ -389,7 +390,7 @@ func (p *Proxy) proxyPlain(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"backend unreachable"}`, http.StatusBadGateway)
 		return
 	}
-	defer backendResp.Body.Close()
+	defer func() { _ = backendResp.Body.Close() }()
 
 	for k, vv := range backendResp.Header {
 		for _, v := range vv {
@@ -397,7 +398,7 @@ func (p *Proxy) proxyPlain(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.WriteHeader(backendResp.StatusCode)
-	io.Copy(w, backendResp.Body)
+	_, _ = io.Copy(w, backendResp.Body)
 }
 
 // newBackendRequest builds an HTTP request targeting the LLM backend.
@@ -439,9 +440,10 @@ func injectSampling(body []byte, sampling *trajectory.SamplingConfig) ([]byte, e
 	}
 	if sampling.MaxTokensBudget > 0 {
 		// Cap max_tokens to remaining budget if present; otherwise leave as-is.
-		if _, ok := req["max_tokens"]; ok {
+		if _, hasMaxTokens := req["max_tokens"]; hasMaxTokens {
 			// We'll enforce budget at proxy level rather than rewriting max_tokens
 			// to avoid interfering with agent's intent.
+			_ = hasMaxTokens
 		}
 	}
 	return json.Marshal(req)
@@ -476,7 +478,7 @@ func (p *Proxy) recordStep(rs *RolloutState, reqBody, respBody []byte, promptTok
 			},
 		},
 	}
-	if err := p.writer.Write(nil, step); err != nil {
+	if err := p.writer.Write(context.TODO(), step); err != nil {
 		p.logger.Error("failed to write trajectory", zap.Error(err))
 	}
 }
@@ -527,9 +529,7 @@ func (ps *ProxyServer) Start() (string, error) {
 	}
 	ps.ListenerAddr = lis.Addr().String()
 	go func() {
-		if err := ps.Serve(lis); err != nil && err != http.ErrServerClosed {
-			// Log is not available here; rely on caller to observe.
-		}
+		_ = ps.Serve(lis)
 	}()
 	return ps.ListenerAddr, nil
 }

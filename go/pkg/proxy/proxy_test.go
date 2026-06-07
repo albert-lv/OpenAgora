@@ -49,7 +49,7 @@ func newMockLLMBackend() *mockLLMBackend {
 			"usage":   map[string]any{"prompt_tokens": 10, "completion_tokens": 5},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	return m
 }
@@ -116,9 +116,9 @@ func TestProxyNonStreaming(t *testing.T) {
 	var received map[string]any
 	be.handler = func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
-		json.Unmarshal(b, &received)
+		_ = json.Unmarshal(b, &received)
 		w.WriteHeader(http.StatusOK)
-		io.WriteString(w, `{"usage":{"prompt_tokens":1,"completion_tokens":1}}`)
+		_, _ = io.WriteString(w, `{"usage":{"prompt_tokens":1,"completion_tokens":1}}`)
 	}
 	req2 := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
 	req2.Header.Set("Authorization", "Bearer tok1")
@@ -212,7 +212,7 @@ func TestProxyStreaming(t *testing.T) {
 			"data: [DONE]\n\n",
 		}
 		for _, c := range chunks {
-			io.WriteString(w, c)
+			_, _ = io.WriteString(w, c)
 			flusher.Flush()
 		}
 	}
@@ -273,7 +273,7 @@ func TestProxyPlainForwarding(t *testing.T) {
 	be.handler = func(w http.ResponseWriter, r *http.Request) {
 		receivedPath = r.URL.Path
 		w.WriteHeader(http.StatusOK)
-		io.WriteString(w, `{"models":[]}`)
+		_, _ = io.WriteString(w, `{"models":[]}`)
 	}
 
 	mw := &mockWriter{}
@@ -345,7 +345,7 @@ func TestProxyServerStart(t *testing.T) {
 	if addr == "" {
 		t.Fatal("expected non-empty address")
 	}
-	defer ps.Close()
+	defer func() { _ = ps.Close() }()
 
 	// Ensure the server is reachable.
 	proxy.RegisterRollout("r1", "tok1", nil, "")
@@ -357,7 +357,7 @@ func TestProxyServerStart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusBadGateway {
 		// Backend is down so we expect 502; the important thing is the server is up.
 		t.Fatalf("expected 502 (backend down), got %d", resp.StatusCode)

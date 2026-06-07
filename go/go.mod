@@ -3,13 +3,13 @@ module github.com/albert-lv/agent-arena/go
 go 1.25.0
 
 require (
+	github.com/google/uuid v1.6.0
 	go.uber.org/zap v1.27.0
 	google.golang.org/grpc v1.81.1
 	google.golang.org/protobuf v1.36.11
 )
 
 require (
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	go.opentelemetry.io/otel v1.44.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.44.0 // indirect

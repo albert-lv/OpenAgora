@@ -89,9 +89,6 @@ func ParsePytestOutput(stdout string) float64 {
 	lines := strings.Split(stdout, "\n")
 	for _, line := range lines {
 		// Look for summary line like "1 passed in 0.01s"
-		if strings.Contains(line, "passed") && strings.Contains(line, "failed") {
-			// Could parse more granularly; for now keep simple.
-		}
 		if strings.Contains(line, "passed") && !strings.Contains(line, "failed") {
 			return 1.0
 		}

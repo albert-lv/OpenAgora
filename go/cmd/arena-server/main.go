@@ -14,7 +14,7 @@ import (
 
 func main() {
 	logger, _ := zap.NewProduction()
-	defer logger.Sync()
+	defer func() { _ = logger.Sync() }()
 
 	s := grpc.NewServer()
 	arena_pb.RegisterArenaServiceServer(s, server.New(logger, nil))

@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"io"
 	"testing"
 	"time"
 
@@ -323,27 +322,4 @@ func (m *mockStream) SetHeader(md metadata.MD) error  { return nil }
 func (m *mockStream) SendHeader(md metadata.MD) error { return nil }
 func (m *mockStream) SetTrailer(md metadata.MD)      {}
 
-// mockWriter for testing.
-type mockWriter struct{}
 
-func (m *mockWriter) Write(ctx context.Context, step *trajectory.Step) error { return nil }
-func (m *mockWriter) Close(ctx context.Context) error                        { return nil }
-
-// mockBackend for testing.
-type mockBackend struct {
-	data map[string]io.Reader
-}
-
-func (m *mockBackend) Write(ctx context.Context, rolloutID string, step *trajectory.Step) error {
-	return nil
-}
-
-func (m *mockBackend) Read(ctx context.Context, rolloutID string, w io.Writer) error {
-	if r, ok := m.data[rolloutID]; ok {
-		_, err := io.Copy(w, r)
-		return err
-	}
-	return nil
-}
-
-func (m *mockBackend) Close(ctx context.Context) error { return nil }

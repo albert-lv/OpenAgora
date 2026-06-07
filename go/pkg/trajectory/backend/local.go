@@ -28,7 +28,7 @@ func (b *LocalJSONL) Write(ctx context.Context, rolloutID string, step *trajecto
 	if err != nil {
 		return fmt.Errorf("local backend: open file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	line, err := json.Marshal(step)
 	if err != nil {
@@ -51,7 +51,7 @@ func (b *LocalJSONL) Read(ctx context.Context, rolloutID string, w io.Writer) er
 	if err != nil {
 		return fmt.Errorf("local backend: open file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	_, err = io.Copy(w, f)
 	return err
