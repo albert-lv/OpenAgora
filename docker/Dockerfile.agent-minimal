@@ -1,25 +1,58 @@
 FROM python:3.12-slim
 
-WORKDIR /sandbox
+# Place the agent script outside the /sandbox bind-mount so it is not shadowed.
+WORKDIR /app
 
 # Minimal agent — reads task.json, loops on LLM calls, writes done on completion
-COPY <<'EOF' /sandbox/agent.py
-import json, os, sys, time
+COPY <<'EOF' /app/agent.py
+import json
+import os
+import time
+import urllib.request
+
 
 def main():
-    task_path = "/sandbox/.arena/task.json"
-    with open(task_path) as f:
-        task = json.load(f)
-    print(f"Task: {task.get('description', 'no description')}")
-    # TODO: implement agent logic
-    time.sleep(1)
-    # Signal completion
+    base_url = os.environ.get("OPENAI_BASE_URL", "").rstrip("/")
+    token = os.environ.get("ARENA_ROLLOUT_TOKEN", "")
+    task_id = os.environ.get("ARENA_TASK_ID", "unknown")
+
+    print(f"Task: {task_id}")
+    print(f"Proxy: {base_url}")
+
+    if not base_url:
+        print("OPENAI_BASE_URL not set, skipping LLM calls")
+
+    for i in range(2):
+        if not base_url:
+            break
+        req = urllib.request.Request(
+            f"{base_url}/chat/completions",
+            data=json.dumps({"model": "gpt-4", "messages": []}).encode(),
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+                choices = data.get("choices", [])
+                content = choices[0]["message"]["content"] if choices else ""
+                print(f"Call {i + 1}: {content}")
+        except Exception as e:
+            print(f"Call {i + 1} failed: {e}")
+        time.sleep(0.1)
+
     os.makedirs("/sandbox/.arena", exist_ok=True)
     with open("/sandbox/.arena/done", "w") as f:
         f.write(json.dumps({"status": "success"}))
+
 
 if __name__ == "__main__":
     main()
 EOF
 
-ENTRYPOINT ["python", "/sandbox/agent.py"]
+# Sandboxes receive a bind-mount at /sandbox, so keep that as the working dir.
+WORKDIR /sandbox
+CMD ["python3", "/app/agent.py"]

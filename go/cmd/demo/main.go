@@ -11,7 +11,7 @@ import (
 	"time"
 
 	arena_pb "github.com/albert-lv/agent-arena/go/proto/arena/v1"
-	"github.com/albert-lv/agent-arena/go/pkg/sandbox/mock"
+	docker "github.com/albert-lv/agent-arena/go/pkg/sandbox/docker"
 	"github.com/albert-lv/agent-arena/go/pkg/server"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -21,10 +21,11 @@ import (
 func main() {
 	logger, _ := zap.NewDevelopment()
 
-	// 1. Start Arena gRPC server with mock sandbox.
+	// 1. Start Arena gRPC server with Docker sandbox provider.
 	grpcSvr := grpc.NewServer()
 	arena_pb.RegisterArenaServiceServer(grpcSvr, server.New(logger, &server.ServerConfig{
-		SandboxProvider: mock.NewProvider(),
+		SandboxProvider:    docker.NewProvider(),
+		ProxyAdvertiseHost: "host.docker.internal",
 	}))
 	lis, _ := net.Listen("tcp", "127.0.0.1:9090")
 	go func() { _ = grpcSvr.Serve(lis) }()
@@ -49,12 +50,17 @@ func main() {
 	ctx := context.Background()
 
 	// 4. Create rollout.
-	resp, _ := client.CreateRollout(ctx, &arena_pb.CreateRolloutRequest{
+	resp, err := client.CreateRollout(ctx, &arena_pb.CreateRolloutRequest{
 		TaskId:     "demo-task",
 		LlmBackend: llmURL,
-		Sandbox:    &arena_pb.SandboxConfig{Image: "mock"},
-		Sampling:   &arena_pb.SamplingConfig{Temperature: 0.5, Seed: 42},
+		Sandbox: &arena_pb.SandboxConfig{
+			Image: "arena-agent-minimal:latest",
+		},
+		Sampling: &arena_pb.SamplingConfig{Temperature: 0.5, Seed: 42},
 	})
+	if err != nil {
+		logger.Fatal("CreateRollout failed", zap.Error(err))
+	}
 	fmt.Println("Rollout ID:", resp.RolloutId)
 	fmt.Println("Proxy URL: ", resp.ProxyUrl)
 

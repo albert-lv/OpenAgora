@@ -506,24 +506,34 @@ func (c *StepCounter) Next(rolloutID string) int {
 type ProxyServer struct {
 	*http.Server
 	ListenerAddr string
+	listenHost   string
 }
 
 // NewProxyServer creates an HTTP server that exposes the proxy on a random port.
 func NewProxyServer(proxy *Proxy, logger *zap.Logger) (*ProxyServer, error) {
+	return NewProxyServerWithHost(proxy, logger, "")
+}
+
+// NewProxyServerWithHost creates an HTTP server bound to the given host with a random port.
+func NewProxyServerWithHost(proxy *Proxy, logger *zap.Logger, host string) (*ProxyServer, error) {
 	mux := http.NewServeMux()
 	mux.Handle("/", proxy)
 
-	// Use :0 to bind to a random available port.
 	return &ProxyServer{
 		Server: &http.Server{
 			Handler: mux,
 		},
+		listenHost: host,
 	}, nil
 }
 
 // Start begins serving on a random port and returns the address.
 func (ps *ProxyServer) Start() (string, error) {
-	lis, err := net.Listen("tcp", ":0")
+	addr := ":0"
+	if ps.listenHost != "" {
+		addr = net.JoinHostPort(ps.listenHost, "0")
+	}
+	lis, err := net.Listen("tcp", addr)
 	if err != nil {
 		return "", err
 	}

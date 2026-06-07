@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"sync"
@@ -39,12 +40,13 @@ type ArenaServer struct {
 	arena_pb.UnimplementedArenaServiceServer
 	logger *zap.Logger
 
-	sandboxProvider sandbox.Provider
-	proxy           *proxy.Proxy
-	verifyRunner    VerifyRunner
-	trajBackend     backend.Backend
-	trajWriter      trajectory.Writer
-	trajDir         string
+	sandboxProvider    sandbox.Provider
+	proxy              *proxy.Proxy
+	proxyAdvertiseHost string
+	verifyRunner       VerifyRunner
+	trajBackend        backend.Backend
+	trajWriter         trajectory.Writer
+	trajDir            string
 
 	mu       sync.RWMutex
 	rollouts map[string]*Rollout // key = rolloutID
@@ -59,6 +61,7 @@ type VerifyRunner interface {
 type ServerConfig struct {
 	SandboxProvider sandbox.Provider
 	Proxy           *proxy.Proxy
+	ProxyAdvertiseHost string // optional host advertised to sandboxes instead of the proxy listener address (e.g. "host.docker.internal")
 	VerifyRunner    VerifyRunner
 	TrajBackend     backend.Backend
 	TrajWriter      trajectory.Writer
@@ -107,14 +110,15 @@ func New(logger *zap.Logger, cfg *ServerConfig) *ArenaServer {
 	}
 
 	return &ArenaServer{
-		logger:          logger,
-		sandboxProvider: sbProvider,
-		proxy:           p,
-		verifyRunner:    cfg.VerifyRunner,
-		trajBackend:     trajBackend,
-		trajWriter:      trajWriter,
-		trajDir:         trajDir,
-		rollouts:        make(map[string]*Rollout),
+		logger:             logger,
+		sandboxProvider:    sbProvider,
+		proxy:              p,
+		proxyAdvertiseHost: cfg.ProxyAdvertiseHost,
+		verifyRunner:       cfg.VerifyRunner,
+		trajBackend:        trajBackend,
+		trajWriter:         trajWriter,
+		trajDir:            trajDir,
+		rollouts:           make(map[string]*Rollout),
 	}
 }
 
@@ -134,13 +138,22 @@ func (s *ArenaServer) CreateRollout(ctx context.Context, req *arena_pb.CreateRol
 		zap.String("llm_backend", req.LlmBackend))
 
 	// 1. Start proxy server for this rollout.
-	ps, err := proxy.NewProxyServer(s.proxy, s.logger)
+	// Listen on all interfaces so sandboxes (e.g. Docker) can reach us.
+	ps, err := proxy.NewProxyServerWithHost(s.proxy, s.logger, "0.0.0.0")
 	if err != nil {
 		return nil, fmt.Errorf("proxy server: %w", err)
 	}
 	proxyAddr, err := ps.Start()
 	if err != nil {
 		return nil, fmt.Errorf("proxy start: %w", err)
+	}
+	_, proxyPort, err := net.SplitHostPort(proxyAddr)
+	if err != nil {
+		return nil, fmt.Errorf("proxy addr: %w", err)
+	}
+	advertiseHost := s.proxyAdvertiseHost
+	if advertiseHost == "" {
+		advertiseHost = "127.0.0.1"
 	}
 
 	// 2. Register rollout on the shared proxy.
@@ -152,7 +165,8 @@ func (s *ArenaServer) CreateRollout(ctx context.Context, req *arena_pb.CreateRol
 	if envVars == nil {
 		envVars = make(map[string]string)
 	}
-	envVars["OPENAI_BASE_URL"] = fmt.Sprintf("http://%s/v1", proxyAddr)
+	proxyURLHost := net.JoinHostPort(advertiseHost, proxyPort)
+	envVars["OPENAI_BASE_URL"] = fmt.Sprintf("http://%s/v1", proxyURLHost)
 	envVars["ARENA_ROLLOUT_TOKEN"] = token
 	envVars["ARENA_TASK_ID"] = req.TaskId
 	envVars["ARENA_SANDBOX_ID"] = rolloutID // will be overwritten after container creation
