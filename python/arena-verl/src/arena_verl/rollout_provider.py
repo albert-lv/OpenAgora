@@ -115,8 +115,8 @@ class ArenaRolloutProvider(BaseRollout):
                 - ``attention_mask``: [bsz, prompt_length + response_length]
                 - ``position_ids``  : [bsz, prompt_length + response_length]
         """
-        bsz = len(prompts)
         prompt_ids = prompts.batch["input_ids"]
+        bsz = prompt_ids.shape[0]
         prompt_attn = prompts.batch.get("attention_mask", torch.ones_like(prompt_ids))
         prompt_pos = prompts.batch.get(
             "position_ids",
