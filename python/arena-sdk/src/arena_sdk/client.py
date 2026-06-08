@@ -1,6 +1,7 @@
+import json
 import grpc
 import time
-from typing import Iterator, Optional
+from typing import Any, Iterator, Optional
 
 from arena.v1 import arena_pb2 as arena_pb
 from arena.v1 import arena_pb2_grpc as arena_grpc
@@ -113,27 +114,60 @@ class ArenaClient:
             }
 
     def get_trajectory(self, rollout_id: str) -> list[dict]:
-        """Get the full trajectory for a completed rollout."""
+        """Get the full trajectory for a completed rollout.
+
+        Returns a list of steps, each containing:
+            - rollout_id, step_id
+            - request: {endpoint, model, messages}
+            - response: {content, usage, logprobs}
+            - metadata
+        """
         req = arena_pb.GetTrajectoryRequest(rollout_id=rollout_id)
         resp = self.stub.GetTrajectory(req)
         steps = []
         for step in resp.steps:
-            steps.append({
+            step_data = {
                 "rollout_id": step.rollout_id,
                 "step_id": step.step_id,
                 "request": {
                     "endpoint": step.request.endpoint if step.request else None,
                     "model": step.request.model if step.request else None,
+                    "messages": self._safe_json_load(step.request.messages) if step.request and step.request.messages else None,
                 },
                 "response": {
+                    "content": self._extract_content(step.response.choices) if step.response else None,
                     "usage": {
                         "prompt_tokens": step.response.usage.prompt_tokens if step.response and step.response.usage else 0,
                         "completion_tokens": step.response.usage.completion_tokens if step.response and step.response.usage else 0,
-                    }
+                    },
+                    "logprobs": self._safe_json_load(step.response.logprobs) if step.response and step.response.logprobs else None,
                 } if step.response else None,
                 "metadata": dict(step.metadata),
-            })
+            }
+            steps.append(step_data)
         return steps
+
+    def _safe_json_load(self, data: bytes) -> Any:
+        """Safely load JSON bytes; return None on failure."""
+        try:
+            return json.loads(data)
+        except Exception:
+            return None
+
+    def _extract_content(self, choices_bytes: bytes) -> Optional[str]:
+        """Extract assistant content from raw choices JSON."""
+        if not choices_bytes:
+            return None
+        try:
+            choices = json.loads(choices_bytes)
+            if choices and len(choices) > 0:
+                choice = choices[0]
+                if isinstance(choice, dict):
+                    msg = choice.get("message", {})
+                    return msg.get("content")
+        except Exception:
+            pass
+        return None
 
     def list_rollouts(self) -> list[dict]:
         """List all rollouts."""
