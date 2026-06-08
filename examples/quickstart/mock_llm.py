@@ -14,7 +14,21 @@ class MockLLMHandler(BaseHTTPRequestHandler):
             body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
             payload = json.loads(body.decode())
             response = {
-                "choices": [{"message": {"content": "print('hello')"}}],
+                "choices": [
+                    {
+                        "message": {"content": "print('hello')"},
+                        "logprobs": {
+                            "content": [
+                                {"token": "print", "logprob": -0.1},
+                                {"token": "(", "logprob": -0.1},
+                                {"token": "'", "logprob": -0.1},
+                                {"token": "hello", "logprob": -0.1},
+                                {"token": "'", "logprob": -0.1},
+                                {"token": ")", "logprob": -0.1},
+                            ]
+                        },
+                    }
+                ],
                 "usage": {"prompt_tokens": 12, "completion_tokens": 6},
             }
             self.send_response(200)

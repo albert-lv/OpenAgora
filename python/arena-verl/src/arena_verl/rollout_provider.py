@@ -150,10 +150,11 @@ class ArenaRolloutProvider(BaseRollout):
         rollout_results = self._run_rollouts(raw_prompts)
 
         # ------------------------------------------------------------------
-        # 3. Build real response_ids and response_mask from trajectories.
+        # 3. Build real response_ids, response_mask, and token-level rewards
+        #    from trajectories.
         # ------------------------------------------------------------------
-        response_ids, response_mask = self._build_responses(
-            rollout_results, prompt_length
+        response_ids, response_mask, token_level_rewards = self._build_responses(
+            rollout_results, prompt_length, bsz
         )
 
         # ------------------------------------------------------------------
@@ -175,6 +176,7 @@ class ArenaRolloutProvider(BaseRollout):
                 "input_ids": input_ids,           # [bsz, prompt_length + response_length]
                 "attention_mask": attention_mask, # [bsz, prompt_length + response_length]
                 "position_ids": position_ids,     # [bsz, prompt_length + response_length]
+                "token_level_rewards": token_level_rewards,  # [bsz, response_length]
             },
             batch_size=bsz,
         )
@@ -252,13 +254,19 @@ class ArenaRolloutProvider(BaseRollout):
     # into real token IDs usable by veRL.
     # ------------------------------------------------------------------
     def _build_responses(
-        self, rollout_results: List[Dict], prompt_length: int
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Build response_ids and response_mask from rollout trajectories.
+        self, rollout_results: List[Dict], prompt_length: int, bsz: int
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Build response_ids, response_mask, and token-level rewards.
 
         For each rollout, we concatenate every assistant message found in the
         trajectory and tokenize it.  The result is padded to
         ``response_length`` (from config) so that the batch is rectangular.
+
+        Token-level rewards are computed from the episode reward returned by
+        Arena.  By default the episode reward is broadcast to every response
+        token (simple but effective for sparse-reward tasks).  A custom
+        ``reward_shaping_fn`` can be registered on the provider to implement
+        more sophisticated shaping (e.g. credit assignment per step).
         """
         response_length = getattr(
             self.config, "response_length", 512
@@ -266,8 +274,13 @@ class ArenaRolloutProvider(BaseRollout):
 
         response_ids_list: List[List[int]] = []
         response_mask_list: List[List[int]] = []
+        reward_list: List[float] = []
 
         for result in rollout_results:
+            # Store the episode reward for token-level shaping.
+            reward = result.get("reward", 0.0) if "error" not in result else 0.0
+            reward_list.append(float(reward))
+
             if "error" in result:
                 # Error case – emit a single pad token so the batch stays valid.
                 response_ids_list.append([self.tokenizer.pad_token_id])
@@ -327,7 +340,19 @@ class ArenaRolloutProvider(BaseRollout):
                 response_mask[i, : len(mask)] = torch.tensor(mask, dtype=torch.long)
         response_mask = response_mask * response_attn
 
-        return response_ids, response_mask
+        # --------------------------------------------------------------
+        # Token-level rewards: distribute episode reward evenly across
+        # all valid (non-pad) response tokens.  Padding positions get 0.0.
+        # Shape: [bsz, response_length].
+        # Sum over response_length equals the original episode reward.
+        # --------------------------------------------------------------
+        token_level_rewards = torch.zeros(bsz, response_length, dtype=torch.float32)
+        for i, (mask, reward) in enumerate(zip(response_mask_list, reward_list)):
+            n_real = len(mask)
+            if n_real > 0:
+                token_level_rewards[i, :n_real] = reward / n_real
+
+        return response_ids, response_mask, token_level_rewards
 
     # ------------------------------------------------------------------
     # BaseRollout abstract methods

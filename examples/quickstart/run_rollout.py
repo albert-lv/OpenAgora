@@ -32,11 +32,11 @@ def main():
     print(f"Rollout created: {rollout_id}")
 
     print("Waiting for completion...")
-    result = client.wait(rollout_id)
+    result = client.wait(rollout_id["rollout_id"])
     print(f"Status: {result['status']}")
     print(f"Reward: {result['reward']}")
 
-    trajectory = client.get_trajectory(rollout_id)
+    trajectory = client.get_trajectory(rollout_id["rollout_id"])
     print(f"Trajectory steps: {len(trajectory)}")
     for step in trajectory:
         req = step.get("request", {})
