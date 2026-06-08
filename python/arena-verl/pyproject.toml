@@ -11,6 +11,11 @@ license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
 dependencies = [
     "arena-sdk>=0.1.0",
+    "numpy",
+    "torch",
+    "transformers",
+    "tensordict",
+    "verl",
 ]
 
 [project.optional-dependencies]
@@ -23,3 +28,4 @@ packages = ["src/arena_verl"]
 
 [tool.uv.sources]
 arena-sdk = { path = "../arena-sdk" }
+verl = { git = "https://github.com/volcengine/verl.git" }
