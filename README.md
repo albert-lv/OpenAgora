@@ -62,6 +62,14 @@ make build
 # Server listening on :9090
 ```
 
+> **Note:** The quickstart uses the Docker sandbox provider by default. Make sure Docker is installed and running before proceeding. If you do not have Docker, you can start the server with a mock sandbox instead:
+> ```bash
+> ./bin/arena-server --sandbox=mock
+> ```
+> The mock provider does not create real containers, but the rest of the flow (proxy, trajectory, verification) works normally.
+
+> **Note on LLM backend:** The default `task.json` in `examples/quickstart` points to a vLLM server at `http://localhost:8000/v1`. If you do not have a vLLM instance running, you can start a mock LLM server with `make demo` or edit `task.json` to point to any OpenAI-compatible endpoint.
+
 ### 3. Run Your First Rollout
 
 In another terminal:

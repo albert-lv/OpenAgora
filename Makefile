@@ -16,6 +16,11 @@ proto:
 build:
 	cd go && go build -o ../bin/arena-server ./cmd/arena-server
 
+# 编译 Demo binary（内置 Docker provider + mock LLM，用于快速验证）
+.PHONY: demo
+demo:
+	cd go && go build -o ../bin/arena-demo ./cmd/demo
+
 # Docker 构建
 .PHONY: docker-server
 docker-server:
@@ -49,6 +54,12 @@ test:
 # 本地开发栈
 .PHONY: dev
 dev:
-	@echo "Starting arena server + vLLM mock..."
+	@echo "Starting arena server + mock LLM..."
 	go run ./go/cmd/arena-server &
-	# vLLM mock would be started here
+	python3 examples/quickstart/mock_llm.py &
+	@echo "Arena server on :9090, mock LLM on :8000"
+
+# 启动 mock LLM（用于 quickstart 无外部 vLLM 时）
+.PHONY: mock-llm
+mock-llm:
+	python3 examples/quickstart/mock_llm.py
