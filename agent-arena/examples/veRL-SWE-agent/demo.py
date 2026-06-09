@@ -16,7 +16,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
-import numpy as np
+import torch
 
 # ------------------------------------------------------------------
 # Mock veRL DataProto / TensorDict (interface-compatible)
@@ -84,18 +84,18 @@ class MockArenaRolloutProvider:
             response_mask.append(mask)
             token_rewards.append(rewards)
         
-        response_ids_t = np.array(response_ids, dtype=np.int64)
-        response_mask_t = np.array(response_mask, dtype=np.int64)
-        token_rewards_t = np.array(token_rewards, dtype=np.float32)
+        response_ids_t = torch.tensor(response_ids, dtype=torch.long)
+        response_mask_t = torch.tensor(response_mask, dtype=torch.long)
+        token_rewards_t = torch.tensor(token_rewards, dtype=torch.float32)
         
         # Build full sequence
-        prompt_ids = prompts.batch["input_ids"] if "input_ids" in prompts.batch._data else np.zeros((bsz, prompt_length), dtype=np.int64)
-        input_ids = np.concatenate([prompt_ids, response_ids_t], axis=1)
-        attention_mask = np.concatenate([
-            np.ones((bsz, prompt_length), dtype=np.int64),
+        prompt_ids = prompts.batch["input_ids"] if "input_ids" in prompts.batch._data else torch.zeros(bsz, prompt_length, dtype=torch.long)
+        input_ids = torch.cat([prompt_ids, response_ids_t], dim=1)
+        attention_mask = torch.cat([
+            torch.ones(bsz, prompt_length, dtype=torch.long),
             response_mask_t
-        ], axis=1)
-        position_ids = (np.cumsum(attention_mask, axis=1) - 1) * attention_mask
+        ], dim=1)
+        position_ids = (attention_mask.cumsum(dim=1) - 1) * attention_mask
         
         batch = MockTensorDict({
             "prompts": prompt_ids,
@@ -176,12 +176,12 @@ def run_mock_demo(n_steps=100):
         # Build fake prompts
         bsz = 4
         prompt_length = 10
-        prompt_ids = np.random.randint(0, VOCAB_SIZE, size=(bsz, prompt_length))
+        prompt_ids = torch.randint(0, VOCAB_SIZE, (bsz, prompt_length))
         
         batch = MockTensorDict({
             "input_ids": prompt_ids,
-            "attention_mask": np.ones((bsz, prompt_length), dtype=np.int64),
-            "position_ids": np.arange(prompt_length).reshape(1, -1).repeat(bsz, axis=0),
+            "attention_mask": torch.ones(bsz, prompt_length, dtype=torch.long),
+            "position_ids": torch.arange(prompt_length).unsqueeze(0).expand(bsz, -1),
         }, batch_size=bsz)
         
         prompts = MockDataProto(
