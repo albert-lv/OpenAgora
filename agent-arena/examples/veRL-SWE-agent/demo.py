@@ -222,10 +222,11 @@ def run_real_demo(arena_endpoint: str, repo_path: str, issue: str):
     
     client = ArenaClient(arena_endpoint)
     
-    # Check Arena server health
+    # Check Arena server health (gRPC)
     try:
-        import urllib.request
-        urllib.request.urlopen(f"http://{arena_endpoint}/health", timeout=5)
+        import grpc
+        channel = grpc.insecure_channel(arena_endpoint)
+        grpc.channel_ready_future(channel).result(timeout=5)
         print(f"Arena Server OK: {arena_endpoint}")
     except Exception as e:
         print(f"ERROR: Cannot connect to Arena Server at {arena_endpoint}: {e}")
@@ -254,7 +255,15 @@ def run_real_demo(arena_endpoint: str, repo_path: str, issue: str):
     }
     
     print(f"Creating rollout: {issue}")
-    rollout = client.create_rollout(task_config)
+    rollout = client.create_rollout(
+        task_id=f"swe-demo-{issue[:20]}",
+        image="arena-swe-agent:latest",
+        llm_backend="http://host.docker.internal:11434/v1",
+        sampling={"temperature": 0.3, "top_p": 0.9, "max_tokens": 1024},
+        verify={"command": "cd /testbed && pytest tests/ -v", "timeout": 120},
+        memory="4g",
+        cpus=2.0,
+    )
     rollout_id = rollout["rollout_id"]
     print(f"Rollout ID: {rollout_id}")
     

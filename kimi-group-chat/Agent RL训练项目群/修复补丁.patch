@@ -1,0 +1,153 @@
+diff --git a/Makefile b/Makefile
+index 1cb2647..939ab15 100644
+--- a/Makefile
++++ b/Makefile
+@@ -16,6 +16,11 @@ proto:
+ build:
+ 	cd go && go build -o ../bin/arena-server ./cmd/arena-server
+ 
++# 编译 Demo binary（内置 Docker provider + mock LLM，用于快速验证）
++.PHONY: demo
++demo:
++	cd go && go build -o ../bin/arena-demo ./cmd/demo
++
+ # Docker 构建
+ .PHONY: docker-server
+ docker-server:
+@@ -49,6 +54,12 @@ test:
+ # 本地开发栈
+ .PHONY: dev
+ dev:
+-	@echo "Starting arena server + vLLM mock..."
++	@echo "Starting arena server + mock LLM..."
+ 	go run ./go/cmd/arena-server &
+-	# vLLM mock would be started here
++	python3 examples/quickstart/mock_llm.py &
++	@echo "Arena server on :9090, mock LLM on :8000"
++
++# 启动 mock LLM（用于 quickstart 无外部 vLLM 时）
++.PHONY: mock-llm
++mock-llm:
++	python3 examples/quickstart/mock_llm.py
+diff --git a/README.md b/README.md
+index 093d723..f75f950 100644
+--- a/README.md
++++ b/README.md
+@@ -62,6 +62,14 @@ make build
+ # Server listening on :9090
+ ```
+ 
++> **Note:** The quickstart uses the Docker sandbox provider by default. Make sure Docker is installed and running before proceeding. If you do not have Docker, you can start the server with a mock sandbox instead:
++> ```bash
++> ./bin/arena-server --sandbox=mock
++> ```
++> The mock provider does not create real containers, but the rest of the flow (proxy, trajectory, verification) works normally.
++
++> **Note on LLM backend:** The default `task.json` in `examples/quickstart` points to a vLLM server at `http://localhost:8000/v1`. If you do not have a vLLM instance running, you can start a mock LLM server with `make demo` or edit `task.json` to point to any OpenAI-compatible endpoint.
++
+ ### 3. Run Your First Rollout
+ 
+ In another terminal:
+diff --git a/docs/getting-started.md b/docs/getting-started.md
+index f589322..f87c5ca 100644
+--- a/docs/getting-started.md
++++ b/docs/getting-started.md
+@@ -64,7 +64,13 @@ This compiles the Go server and places the binary at `./bin/arena-server`.
+ 
+ By default the server listens on `:9090`. You should see log output indicating that the gRPC server and sandbox provider are ready.
+ 
+-> **Note:** The quickstart uses the Docker sandbox provider. Make sure Docker is running before proceeding.
++> **Note:** The quickstart uses the Docker sandbox provider by default. Make sure Docker is running before proceeding. If you do not have Docker, you can start the server with a mock sandbox instead:
++> ```bash
++> ./bin/arena-server --sandbox=mock
++> ```
++> The mock provider does not create real containers, but the rest of the flow (proxy, trajectory, verification) works normally.
++
++> **Note on LLM backend:** The default `task.json` in `examples/quickstart` points to a vLLM server at `http://localhost:8000/v1`. If you do not have a vLLM instance running, you can start a mock LLM server with `make demo` or edit `task.json` to point to any OpenAI-compatible endpoint.
+ 
+ ---
+ 
+diff --git a/examples/quickstart/run.sh b/examples/quickstart/run.sh
+index 0c613c5..6bddd6f 100755
+--- a/examples/quickstart/run.sh
++++ b/examples/quickstart/run.sh
+@@ -6,11 +6,25 @@ set -euo pipefail
+ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ ARENA_ENDPOINT="${ARENA_ENDPOINT:-localhost:9090}"
+ TASK_FILE="${TASK_FILE:-$SCRIPT_DIR/task.json}"
++SDK_DIR="$SCRIPT_DIR/../../python/arena-sdk"
+ 
+ # Ensure arena-sdk is available
+ if ! python3 -c "import arena_sdk" 2>/dev/null; then
+     echo "Installing arena-sdk..."
+-    pip install -e "$SCRIPT_DIR/../../python/arena-sdk"
++    if command -v uv &>/dev/null; then
++        # Prefer uv if the project uses it
++        uv pip install -e "$SDK_DIR"
++    elif python3 -m pip --version &>/dev/null; then
++        # Standard PEP 668 compatible path
++        python3 -m pip install -e "$SDK_DIR"
++    elif command -v pip3 &>/dev/null; then
++        pip3 install -e "$SDK_DIR"
++    elif command -v pip &>/dev/null; then
++        pip install -e "$SDK_DIR"
++    else
++        echo "Error: no pip found. Please install Python pip."
++        exit 1
++    fi
+ fi
+ 
+ echo "Creating rollout via Arena ($ARENA_ENDPOINT)..."
+diff --git a/go/cmd/arena-server/main.go b/go/cmd/arena-server/main.go
+index a17b704..cd6d45c 100644
+--- a/go/cmd/arena-server/main.go
++++ b/go/cmd/arena-server/main.go
+@@ -1,12 +1,15 @@
+ package main
+ 
+ import (
++	"flag"
+ 	"net"
+ 	"os"
+ 	"os/signal"
+ 	"syscall"
+ 
+ 	arena_pb "github.com/albert-lv/agent-arena/go/proto/arena/v1"
++	"github.com/albert-lv/agent-arena/go/pkg/sandbox/docker"
++	"github.com/albert-lv/agent-arena/go/pkg/sandbox/mock"
+ 	"github.com/albert-lv/agent-arena/go/pkg/server"
+ 	"go.uber.org/zap"
+ 	"google.golang.org/grpc"
+@@ -16,8 +19,22 @@ func main() {
+ 	logger, _ := zap.NewProduction()
+ 	defer func() { _ = logger.Sync() }()
+ 
++	var sandboxType string
++	flag.StringVar(&sandboxType, "sandbox", "docker", "sandbox provider: docker | mock")
++	flag.Parse()
++
++	var cfg *server.ServerConfig
++	switch sandboxType {
++	case "docker":
++		cfg = &server.ServerConfig{SandboxProvider: docker.NewProvider()}
++	case "mock":
++		cfg = &server.ServerConfig{SandboxProvider: mock.NewProvider()}
++	default:
++		logger.Fatal("unknown sandbox provider", zap.String("sandbox", sandboxType))
++	}
++
+ 	s := grpc.NewServer()
+-	arena_pb.RegisterArenaServiceServer(s, server.New(logger, nil))
++	arena_pb.RegisterArenaServiceServer(s, server.New(logger, cfg))
+ 
+ 	lis, err := net.Listen("tcp", ":9090")
+ 	if err != nil {
+@@ -30,7 +47,7 @@ func main() {
+ 		}
+ 	}()
+ 
+-	logger.Info("arena-server started", zap.String("addr", lis.Addr().String()))
++	logger.Info("arena-server started", zap.String("addr", lis.Addr().String()), zap.String("sandbox", sandboxType))
+ 
+ 	quit := make(chan os.Signal, 1)
+ 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
