@@ -5,6 +5,7 @@ from typing import Any, Iterator, Optional
 
 from arena.v1 import arena_pb2 as arena_pb
 from arena.v1 import arena_pb2_grpc as arena_grpc
+from arena.v1 import trajectory_pb2 as trajectory_pb
 
 
 class ArenaClient:
@@ -41,7 +42,7 @@ class ArenaClient:
 
         sampling_cfg = None
         if sampling is not None:
-            sampling_cfg = arena_pb.SamplingConfig(
+            sampling_cfg = trajectory_pb.SamplingConfig(
                 temperature=sampling.get("temperature", 0.7),
                 top_p=sampling.get("top_p", 0.95),
                 seed=sampling.get("seed", 0),

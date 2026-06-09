@@ -1,0 +1,183 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "open",
+      "description": "Open a file at the given path in the editor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to the file to open"
+          }
+        },
+        "required": ["path"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "goto",
+      "description": "Navigate to a specific line in the currently open file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "line": {
+            "type": "integer",
+            "description": "Line number to navigate to"
+          }
+        },
+        "required": ["line"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "scroll_down",
+      "description": "Scroll down in the currently open file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": "integer",
+            "description": "Number of lines to scroll down",
+            "default": 10
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "scroll_up",
+      "description": "Scroll up in the currently open file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": "integer",
+            "description": "Number of lines to scroll up",
+            "default": 10
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "search_dir",
+      "description": "Search for a keyword in all files in the current directory.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "Keyword to search for"
+          }
+        },
+        "required": ["keyword"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "search_file",
+      "description": "Search for a keyword in the currently open file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "Keyword to search for"
+          }
+        },
+        "required": ["keyword"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "find_file",
+      "description": "Find a file by name in the current directory tree.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "File name to search for"
+          }
+        },
+        "required": ["name"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "edit",
+      "description": "Edit the currently open file at the specified lines.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_line": {
+            "type": "integer",
+            "description": "Start line of the edit"
+          },
+          "end_line": {
+            "type": "integer",
+            "description": "End line of the edit"
+          },
+          "replacement": {
+            "type": "string",
+            "description": "Replacement text"
+          }
+        },
+        "required": ["start_line", "end_line", "replacement"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "create",
+      "description": "Create a new file at the given path.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to the new file"
+          },
+          "content": {
+            "type": "string",
+            "description": "Initial content of the file"
+          }
+        },
+        "required": ["path"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "submit",
+      "description": "Submit the solution and finish the task.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "Optional message about the submission"
+          }
+        }
+      }
+    }
+  }
+]
