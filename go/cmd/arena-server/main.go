@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	arena_pb "github.com/albert-lv/agent-arena/go/proto/arena/v1"
+	"github.com/albert-lv/agent-arena/go/pkg/dashboard"
 	"github.com/albert-lv/agent-arena/go/pkg/sandbox/docker"
 	"github.com/albert-lv/agent-arena/go/pkg/sandbox/mock"
 	"github.com/albert-lv/agent-arena/go/pkg/server"
@@ -47,7 +48,16 @@ func main() {
 		}
 	}()
 
+	go func() {
+		dash := dashboard.NewServer(9091)
+		logger.Info("dashboard server starting", zap.Int("port", 9091))
+		if err := dash.Start(); err != nil {
+			logger.Error("dashboard server error", zap.Error(err))
+		}
+	}()
+
 	logger.Info("arena-server started", zap.String("addr", lis.Addr().String()), zap.String("sandbox", sandboxType))
+
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
