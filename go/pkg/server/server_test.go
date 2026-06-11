@@ -77,6 +77,10 @@ func (m *mockSandboxProvider) WaitForDone(ctx context.Context, id string) error 
 	}
 }
 
+func (m *mockSandboxProvider) Logs(ctx context.Context, id string, tail int) ([]byte, error) {
+	return []byte("mock logs"), nil
+}
+
 // mockVerifyRunner is a verification runner for testing.
 type mockVerifyRunner struct {
 	rewards []float64

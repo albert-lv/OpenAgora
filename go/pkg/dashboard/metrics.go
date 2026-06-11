@@ -280,13 +280,6 @@ func (s *MetricsStore) GetTokenStats() TokenStats {
 	defer s.mu.RUnlock()
 
 	byRollout := make([]RolloutTokens, 0)
-	// Top 20 by token usage
-	type tokenPair struct {
-		id    string
-		total int64
-	}
-	// ... implementation
-
 	return TokenStats{
 		TotalPrompt:     s.totalPromptTokens,
 		TotalCompletion: s.totalCompletionTokens,

@@ -73,7 +73,7 @@ func TestProxyAuth(t *testing.T) {
 	}
 
 	// Register rollout and retry.
-	proxy.RegisterRollout("r1", "tok1", nil, "")
+	proxy.RegisterRollout("r1", "t1", "tok1", nil, "")
 	req2 := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{}`))
 	req2.Header.Set("Authorization", "Bearer tok1")
 	rec2 := httptest.NewRecorder()
@@ -94,7 +94,7 @@ func TestProxyNonStreaming(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new proxy: %v", err)
 	}
-	proxy.RegisterRollout("r1", "tok1", &trajectory.SamplingConfig{
+	proxy.RegisterRollout("r1", "t1", "tok1", &trajectory.SamplingConfig{
 		Temperature:     0.5,
 		TopP:            0.9,
 		Seed:            42,
@@ -165,7 +165,7 @@ func TestProxyTokenBudget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new proxy: %v", err)
 	}
-	proxy.RegisterRollout("r1", "tok1", &trajectory.SamplingConfig{
+	proxy.RegisterRollout("r1", "t1", "tok1", &trajectory.SamplingConfig{
 		MaxTokensBudget: 12,
 	}, "")
 
@@ -223,7 +223,7 @@ func TestProxyStreaming(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new proxy: %v", err)
 	}
-	proxy.RegisterRollout("r1", "tok1", nil, "")
+	proxy.RegisterRollout("r1", "t1", "tok1", nil, "")
 
 	body := `{"model":"gpt-4","messages":[],"stream":true}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
@@ -282,7 +282,7 @@ func TestProxyPlainForwarding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new proxy: %v", err)
 	}
-	proxy.RegisterRollout("r1", "tok1", nil, "")
+	proxy.RegisterRollout("r1", "t1", "tok1", nil, "")
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
 	req.Header.Set("Authorization", "Bearer tok1")
@@ -348,7 +348,7 @@ func TestProxyServerStart(t *testing.T) {
 	defer func() { _ = ps.Close() }()
 
 	// Ensure the server is reachable.
-	proxy.RegisterRollout("r1", "tok1", nil, "")
+	proxy.RegisterRollout("r1", "t1", "tok1", nil, "")
 	url := "http://" + addr + "/v1/models"
 	req, _ := http.NewRequest(http.MethodGet, url, nil)
 	req.Header.Set("Authorization", "Bearer tok1")
@@ -375,7 +375,7 @@ func TestBudgetNotEnforcedWhenZero(t *testing.T) {
 		t.Fatalf("new proxy: %v", err)
 	}
 	// BudgetLimit = 0 means unlimited.
-	proxy.RegisterRollout("r1", "tok1", &trajectory.SamplingConfig{
+	proxy.RegisterRollout("r1", "t1", "tok1", &trajectory.SamplingConfig{
 		MaxTokensBudget: 0,
 	}, "")
 
@@ -402,7 +402,7 @@ func BenchmarkProxyNonStreaming(b *testing.B) {
 	if err != nil {
 		b.Fatalf("new proxy: %v", err)
 	}
-	proxy.RegisterRollout("r1", "tok1", nil, "")
+	proxy.RegisterRollout("r1", "t1", "tok1", nil, "")
 
 	body := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"hi"}]}`)
 	b.ResetTimer()

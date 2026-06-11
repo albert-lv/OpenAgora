@@ -9,9 +9,8 @@ import (
 
 // Server serves the Arena dashboard HTTP API and static files.
 type Server struct {
-	port       int
-	store      *MetricsStore
-	rolloutSvc interface{} // placeholder for rollout service integration
+	port  int
+	store *MetricsStore
 }
 
 // NewServer creates a new dashboard server.
@@ -56,7 +55,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	metrics := s.store.GetMetrics()
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(metrics)
+	_ = json.NewEncoder(w).Encode(metrics)
 }
 
 // handleRollouts returns a list of rollouts with pagination.
@@ -66,7 +65,7 @@ func (s *Server) handleRollouts(w http.ResponseWriter, r *http.Request) {
 	// Parse query params if needed
 	rollouts := s.store.GetRollouts(limit, offset)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(rollouts)
+	_ = json.NewEncoder(w).Encode(rollouts)
 }
 
 // handleRolloutDetail returns details for a specific rollout.
@@ -78,14 +77,14 @@ func (s *Server) handleRolloutDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(rollout)
+	_ = json.NewEncoder(w).Encode(rollout)
 }
 
 // handleTokens returns token usage statistics.
 func (s *Server) handleTokens(w http.ResponseWriter, r *http.Request) {
 	stats := s.store.GetTokenStats()
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(stats)
+	_ = json.NewEncoder(w).Encode(stats)
 }
 
 // handleTrajectory returns trajectory data for a specific rollout.
@@ -97,19 +96,19 @@ func (s *Server) handleTrajectory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(trajectory)
+	_ = json.NewEncoder(w).Encode(trajectory)
 }
 
 // handleToolAnalysis returns tool calling analysis data.
 func (s *Server) handleToolAnalysis(w http.ResponseWriter, r *http.Request) {
 	analysis := s.store.GetToolAnalysis()
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(analysis)
+	_ = json.NewEncoder(w).Encode(analysis)
 }
 
 // handleVerifyAnalysis returns verify success rate analysis.
 func (s *Server) handleVerifyAnalysis(w http.ResponseWriter, r *http.Request) {
 	analysis := s.store.GetVerifyAnalysis()
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(analysis)
+	_ = json.NewEncoder(w).Encode(analysis)
 }

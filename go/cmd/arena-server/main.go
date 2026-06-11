@@ -22,7 +22,7 @@ type simpleVerifyRunner struct {
 }
 
 func (r *simpleVerifyRunner) Run(ctx context.Context, sandboxID string, command string) ([]float64, error) {
-	cmd := exec.CommandContext(ctx, "docker", append([]string{"exec", sandboxID, "sh", "-c", command})...)
+	cmd := exec.CommandContext(ctx, "docker", append([]string{"exec", sandboxID, "sh", "-c", command}, []string{}...)...)
 	out, err := cmd.CombinedOutput()
 	if r.logger != nil {
 		r.logger.Info("verify exec",

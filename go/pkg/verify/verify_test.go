@@ -19,6 +19,9 @@ func (m *mockProvider) Start(ctx context.Context, id string) error  { return nil
 func (m *mockProvider) Stop(ctx context.Context, id string) error   { return nil }
 func (m *mockProvider) Destroy(ctx context.Context, id string) error { return nil }
 func (m *mockProvider) WaitForDone(ctx context.Context, id string) error { return nil }
+func (m *mockProvider) Logs(ctx context.Context, id string, tail int) ([]byte, error) {
+	return nil, nil
+}
 func (m *mockProvider) Exec(ctx context.Context, id string, cmd []string) (*sandbox.ExecResult, error) {
 	return m.execResult, m.execErr
 }
@@ -75,6 +78,9 @@ func (m *mockProviderWithCounter) Start(ctx context.Context, id string) error  {
 func (m *mockProviderWithCounter) Stop(ctx context.Context, id string) error   { return nil }
 func (m *mockProviderWithCounter) Destroy(ctx context.Context, id string) error { return nil }
 func (m *mockProviderWithCounter) WaitForDone(ctx context.Context, id string) error { return nil }
+func (m *mockProviderWithCounter) Logs(ctx context.Context, id string, tail int) ([]byte, error) {
+	return nil, nil
+}
 func (m *mockProviderWithCounter) Exec(ctx context.Context, id string, cmd []string) (*sandbox.ExecResult, error) {
 	m.callCount++
 	if m.callCount == 1 {

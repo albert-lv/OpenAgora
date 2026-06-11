@@ -38,7 +38,7 @@ func (s *ArenaServer) DashboardHandler() http.Handler {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(data)
+		_, _ = w.Write(data)
 	})
 
 	return mux
@@ -72,7 +72,7 @@ func (s *ArenaServer) handleListRollouts(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(items)
+	_ = json.NewEncoder(w).Encode(items)
 }
 
 func (s *ArenaServer) handleRolloutDetail(w http.ResponseWriter, r *http.Request) {
@@ -110,7 +110,7 @@ func (s *ArenaServer) handleRolloutDetail(w http.ResponseWriter, r *http.Request
 		FinishedAt: ro.FinishedAt,
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (s *ArenaServer) handleRolloutLogs(w http.ResponseWriter, r *http.Request, ro *Rollout) {
@@ -120,7 +120,7 @@ func (s *ArenaServer) handleRolloutLogs(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Write(logs)
+	_, _ = w.Write(logs)
 }
 
 func (s *ArenaServer) handleTrajectory(w http.ResponseWriter, r *http.Request, rolloutID string) {
@@ -143,7 +143,7 @@ func (s *ArenaServer) handleTrajectory(w http.ResponseWriter, r *http.Request, r
 		items = append(items, trajectoryStepToMap(&step))
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(items)
+	_ = json.NewEncoder(w).Encode(items)
 }
 
 func trajectoryStepToMap(step *trajectory.Step) map[string]any {
@@ -234,7 +234,7 @@ func (s *ArenaServer) handleStatsOverview(w http.ResponseWriter, r *http.Request
 		"total_tokens":    totalTokens,
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (s *ArenaServer) handleStatsVerify(w http.ResponseWriter, r *http.Request) {
@@ -271,5 +271,5 @@ func (s *ArenaServer) handleStatsVerify(w http.ResponseWriter, r *http.Request) 
 		"avg_reward":   avgReward,
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
