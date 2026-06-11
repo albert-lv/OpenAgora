@@ -19,8 +19,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+verl = [
+    "tensordict>=0.10.0",
+    "torch>=2.0.0",
+]
 dev = [
     "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "numpy>=1.26",
 ]
 
 [tool.hatch.build.targets.wheel]

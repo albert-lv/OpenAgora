@@ -57,3 +57,8 @@ func (p *Provider) WaitForDone(ctx context.Context, id string) error {
 		return nil
 	}
 }
+
+// Logs returns mock log output.
+func (p *Provider) Logs(ctx context.Context, id string, tail int) ([]byte, error) {
+	return []byte("[mock] agent running...\n[mock] task complete\n"), nil
+}

@@ -1,0 +1,5 @@
+{
+  "task_id": "demo-add-function",
+  "prompt": "Write a Python function named `add` that takes two integers a and b and returns their sum. Save it to /sandbox/solution.py",
+  "test": "assert add(2, 3) == 5; assert add(-1, 1) == 0"
+}

@@ -1,0 +1,121 @@
+version: "3.8"
+
+services:
+  # ------------------------------------------------------------------
+  # Ollama — local LLM inference server
+  # ------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    container_name: arena-ollama
+    volumes:
+      - ollama-data:/root/.ollama
+    ports:
+      - "11434:11434"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - arena-net
+
+  # ------------------------------------------------------------------
+  # Arena Server — manages sandbox lifecycle, proxy, trajectory
+  # ------------------------------------------------------------------
+  arena-server:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.server
+    container_name: arena-server
+    # Mount host Docker socket so Arena can spawn sandbox containers
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "9090:9090"
+    environment:
+      - PROXY_ADVERTISE_HOST=host.docker.internal
+    depends_on:
+      ollama:
+        condition: service_started
+    networks:
+      - arena-net
+
+  # ------------------------------------------------------------------
+  # Build agent image locally so arena-server can spawn it via host docker
+  # ------------------------------------------------------------------
+  agent-builder:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.demo-agent
+    image: arena-demo-agent:latest
+    container_name: arena-agent-builder
+    # This service just builds the image; it exits immediately
+    entrypoint: ["sh", "-c", "echo 'Agent image built'"]
+
+  # ------------------------------------------------------------------
+  # Ray Head — distributed training coordinator
+  # ------------------------------------------------------------------
+  ray-head:
+    image: rayproject/ray:2.40.0-py312-cpu
+    container_name: arena-ray-head
+    command: >
+      bash -c "ray start --head --dashboard-host=0.0.0.0 --port=6379 --dashboard-port=8265 --block"
+    ports:
+      - "6379:6379"
+      - "8265:8265"
+      - "10001:10001"
+    networks:
+      - arena-net
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 2G
+
+  # ------------------------------------------------------------------
+  # CPU Trainer — veRL + ArenaAgentLoop, pure CPU
+  # ------------------------------------------------------------------
+  trainer:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.cpu-trainer
+    container_name: arena-trainer
+    environment:
+      - MODEL_NAME=Qwen/Qwen2.5-0.5B-Instruct
+      - DATASET_PATH=/app/data/demo_dataset.parquet
+      - ARENA_ENDPOINT=arena-server:9090
+      - ARENA_AGENT_IMAGE=arena-demo-agent:latest
+      - ARENA_LLM_BACKEND=http://ollama:11434/v1
+      - ARENA_VERIFY_COMMAND=cd /sandbox && python -c "from solution import add; assert add(2,3)==5; print('PASS')"
+      - HF_HOME=/app/.cache/huggingface
+      - TRANSFORMERS_OFFLINE=0
+      - PYTHONUNBUFFERED=1
+      - RAY_ADDRESS=ray-head:6379
+    volumes:
+      - huggingface-cache:/app/.cache/huggingface
+      - ./data:/app/data
+    depends_on:
+      ollama:
+        condition: service_healthy
+      arena-server:
+        condition: service_started
+      agent-builder:
+        condition: service_completed_successfully
+      ray-head:
+        condition: service_started
+    networks:
+      - arena-net
+    # Prevent trainer from eating all CPU; leave headroom for ollama + sandbox
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4G
+
+volumes:
+  ollama-data:
+  huggingface-cache:
+
+networks:
+  arena-net:
+    driver: bridge

@@ -21,6 +21,7 @@ import (
 // RolloutState holds per-rollout mutable state protected by Proxy.mu.
 type RolloutState struct {
 	RolloutID   string
+	TraceID     string
 	Token       string
 	Sampling    *trajectory.SamplingConfig
 	Usage       trajectory.Usage
@@ -62,7 +63,7 @@ func NewProxy(backendURL string, writer trajectory.Writer, logger *zap.Logger) (
 
 // RegisterRollout registers a new rollout so that subsequent requests
 // bearing its token are recognised and attributed.
-func (p *Proxy) RegisterRollout(rolloutID, token string, sampling *trajectory.SamplingConfig, backendURL string) {
+func (p *Proxy) RegisterRollout(rolloutID, traceID, token string, sampling *trajectory.SamplingConfig, backendURL string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -76,6 +77,7 @@ func (p *Proxy) RegisterRollout(rolloutID, token string, sampling *trajectory.Sa
 	}
 	p.rollouts[token] = &RolloutState{
 		RolloutID:   rolloutID,
+		TraceID:     traceID,
 		Token:       token,
 		Sampling:    sampling,
 		BudgetLimit: budget,
@@ -83,6 +85,7 @@ func (p *Proxy) RegisterRollout(rolloutID, token string, sampling *trajectory.Sa
 	}
 	p.logger.Info("rollout registered",
 		zap.String("rollout_id", rolloutID),
+		zap.String("trace_id", traceID),
 		zap.Int("budget", budget))
 }
 
@@ -162,6 +165,7 @@ func (p *Proxy) handleChatCompletions(w http.ResponseWriter, r *http.Request, rs
 		p.logger.Warn("failed to inject sampling", zap.Error(err))
 		// Continue with original body on injection failure.
 	}
+	p.logger.Info("proxy forwarded request", zap.String("rollout_id", rs.RolloutID), zap.ByteString("body", body))
 
 	// 2. Check token budget before forwarding.
 	if rs.BudgetLimit > 0 {
@@ -206,6 +210,7 @@ func (p *Proxy) handleChatCompletions(w http.ResponseWriter, r *http.Request, rs
 		return
 	}
 	defer func() { _ = backendResp.Body.Close() }()
+	p.logger.Info("proxy backend response", zap.String("rollout_id", rs.RolloutID), zap.Int("status", backendResp.StatusCode))
 
 	// Copy headers except those managed by Go's HTTP server.
 	for k, vv := range backendResp.Header {
@@ -232,9 +237,10 @@ func (p *Proxy) nonStreamResponse(w http.ResponseWriter, respBody io.Reader, rs 
 
 	_, _ = w.Write(respBytes)
 
-	// Extract usage.
+	// Extract usage and logprobs.
 	var respMap map[string]any
 	promptTokens, completionTokens := 0, 0
+	var logprobsBytes []byte
 	if json.Unmarshal(respBytes, &respMap) == nil {
 		if usage, ok := respMap["usage"].(map[string]any); ok {
 			if v, ok := usage["prompt_tokens"].(float64); ok {
@@ -244,14 +250,12 @@ func (p *Proxy) nonStreamResponse(w http.ResponseWriter, respBody io.Reader, rs 
 				completionTokens = int(v)
 			}
 		}
-	}
-
-	// Extract logprobs from the first choice.
-	var logprobsBytes []byte
-	if choices, ok := respMap["choices"].([]any); ok && len(choices) > 0 {
-		if choice, ok := choices[0].(map[string]any); ok {
-			if logprobs, ok := choice["logprobs"]; ok && logprobs != nil {
-				logprobsBytes, _ = json.Marshal(logprobs)
+		// Capture logprobs if present.
+		if lp, ok := respMap["choices"].([]any); ok && len(lp) > 0 {
+			if choice, ok := lp[0].(map[string]any); ok {
+				if logprobs, ok := choice["logprobs"]; ok && logprobs != nil {
+					logprobsBytes, _ = json.Marshal(logprobs)
+				}
 			}
 		}
 	}
@@ -334,7 +338,6 @@ func (p *Proxy) streamResponse(w http.ResponseWriter, respBody io.Reader, rs *Ro
 	}
 
 	// Build a synthetic response for trajectory capture.
-	var logprobsBytes []byte
 	syntheticResp := map[string]any{
 		"choices": []any{
 			map[string]any{
@@ -362,14 +365,6 @@ func (p *Proxy) streamResponse(w http.ResponseWriter, respBody io.Reader, rs *Ro
 					completionTokens = int(v)
 				}
 			}
-			// Also try to extract logprobs from the last chunk.
-			if choices, ok := chunk["choices"].([]any); ok && len(choices) > 0 {
-				if choice, ok := choices[0].(map[string]any); ok {
-					if logprobs, ok := choice["logprobs"]; ok && logprobs != nil {
-						logprobsBytes, _ = json.Marshal(logprobs)
-					}
-				}
-			}
 		}
 		syntheticResp["usage"] = map[string]any{
 			"prompt_tokens":     promptTokens,
@@ -378,7 +373,8 @@ func (p *Proxy) streamResponse(w http.ResponseWriter, respBody io.Reader, rs *Ro
 	}
 
 	syntheticBytes, _ := json.Marshal(syntheticResp)
-	p.recordStep(rs, reqBody, syntheticBytes, promptTokens, completionTokens, logprobsBytes)
+	// Streaming responses typically don't carry per-token logprobs.
+	p.recordStep(rs, reqBody, syntheticBytes, promptTokens, completionTokens, nil)
 
 	if rs.BudgetLimit > 0 {
 		_, _, over := p.addUsage(rs.Token, promptTokens, completionTokens)
@@ -439,8 +435,7 @@ func (p *Proxy) newBackendRequest(r *http.Request, body []byte, backend *url.URL
 	return req, nil
 }
 
-// injectSampling rewrites the request JSON to enforce per-rollout sampling params
-// and to request logprobs (needed for RL training).
+// injectSampling rewrites the request JSON to enforce per-rollout sampling params.
 func injectSampling(body []byte, sampling *trajectory.SamplingConfig) ([]byte, error) {
 	if sampling == nil {
 		return body, nil
@@ -458,12 +453,17 @@ func injectSampling(body []byte, sampling *trajectory.SamplingConfig) ([]byte, e
 	if sampling.Seed != 0 {
 		req["seed"] = sampling.Seed
 	}
-	// Inject logprobs=true so the backend returns token-level probabilities.
-	// vLLM, SGLang and OpenAI-compatible APIs all support this parameter.
-	req["logprobs"] = true
-	if _, hasTopLogprobs := req["top_logprobs"]; !hasTopLogprobs {
-		req["top_logprobs"] = 5
+	if sampling.MaxTokensBudget > 0 {
+		// Cap max_tokens to remaining budget if present; otherwise leave as-is.
+		if _, hasMaxTokens := req["max_tokens"]; hasMaxTokens {
+			// We'll enforce budget at proxy level rather than rewriting max_tokens
+			// to avoid interfering with agent's intent.
+			_ = hasMaxTokens
+		}
 	}
+	// Request logprobs from backend to support RL training.
+	// Note: ollama supports logprobs but not top_logprobs.
+	req["logprobs"] = true
 	return json.Marshal(req)
 }
 
@@ -489,12 +489,15 @@ func (p *Proxy) recordStep(rs *RolloutState, reqBody, respBody []byte, promptTok
 			Sampling: rs.Sampling,
 		},
 		Response: &trajectory.LLMResponse{
-			Choices:  respBody,
+			Choices: respBody,
 			Usage: &trajectory.Usage{
 				PromptTokens:     promptTokens,
 				CompletionTokens: completionTokens,
 			},
 			Logprobs: logprobs,
+		},
+		Metadata: map[string]string{
+			"trace_id": rs.TraceID,
 		},
 	}
 	if err := p.writer.Write(context.TODO(), step); err != nil {

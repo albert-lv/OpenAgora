@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 // Rollout holds the runtime state of a single rollout.
 type Rollout struct {
 	ID         string
+	TraceID    string
 	TaskID     string
 	Status     string // pending, running, success, failed, stopped
 	SandboxID  string
@@ -129,10 +131,12 @@ func (s *ArenaServer) CreateRollout(ctx context.Context, req *arena_pb.CreateRol
 	}
 
 	rolloutID := uuid.NewString()
+	traceID := uuid.NewString()
 	token := uuid.NewString()
 
 	s.logger.Info("CreateRollout",
 		zap.String("rollout_id", rolloutID),
+		zap.String("trace_id", traceID),
 		zap.String("task_id", req.TaskId),
 		zap.String("image", req.Sandbox.Image),
 		zap.String("llm_backend", req.LlmBackend))
@@ -158,7 +162,13 @@ func (s *ArenaServer) CreateRollout(ctx context.Context, req *arena_pb.CreateRol
 
 	// 2. Register rollout on the shared proxy.
 	sampling := protoToInternalSampling(req.Sampling)
-	s.proxy.RegisterRollout(rolloutID, token, sampling, req.LlmBackend)
+	// If arena-server runs on the host, it cannot resolve host.docker.internal.
+	// Replace with localhost so the proxy can reach the LLM backend.
+	llmBackend := req.LlmBackend
+	if strings.Contains(llmBackend, "host.docker.internal") {
+		llmBackend = strings.ReplaceAll(llmBackend, "host.docker.internal", "localhost")
+	}
+	s.proxy.RegisterRollout(rolloutID, traceID, token, sampling, llmBackend)
 
 	// 3. Build sandbox config with injected env vars.
 	envVars := req.Sandbox.EnvVars
@@ -202,6 +212,7 @@ func (s *ArenaServer) CreateRollout(ctx context.Context, req *arena_pb.CreateRol
 	// 6. Record rollout state.
 	rollout := &Rollout{
 		ID:        rolloutID,
+		TraceID:   traceID,
 		TaskID:    req.TaskId,
 		Status:    "running",
 		SandboxID: sb.ID,
@@ -230,10 +241,7 @@ func (s *ArenaServer) runLifecycle(rolloutID, sandboxID, token string, ps *proxy
 		s.logger.Warn("WaitForDone error", zap.String("rollout_id", rolloutID), zap.Error(err))
 	}
 
-	// Stop the sandbox (idempotent).
-	_ = s.sandboxProvider.Stop(ctx, sandboxID)
-
-	// Run verification if configured.
+	// Run verification BEFORE stopping the sandbox so docker exec can still work.
 	var reward float64
 	if verifyCfg != nil && verifyCfg.Command != "" && s.verifyRunner != nil {
 		rewards, verr := s.verifyRunner.Run(ctx, sandboxID, verifyCfg.Command)
@@ -245,6 +253,9 @@ func (s *ArenaServer) runLifecycle(rolloutID, sandboxID, token string, ps *proxy
 			reward = rewards[0]
 		}
 	}
+
+	// Stop the sandbox (idempotent).
+	_ = s.sandboxProvider.Stop(ctx, sandboxID)
 
 	// Update rollout state.
 	now := time.Now()

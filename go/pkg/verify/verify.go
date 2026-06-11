@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/albert-lv/agent-arena/go/pkg/sandbox"
@@ -22,12 +24,40 @@ func NewRunner(provider sandbox.Provider) *Runner {
 	return &Runner{provider: provider}
 }
 
+// VerifyMode describes how a verify command should be interpreted.
+type VerifyMode int
+
+const (
+	ModeUnknown   VerifyMode = iota
+	ModePytest               // pytest with detailed pass/fail parsing
+	ModeUnittest             // python -m unittest
+	ModeScript               // generic shell script (exit code only)
+	ModeCustom               // agent-written rewards.jsonl only
+)
+
+// DetectMode guesses the verify mode from the command string.
+func DetectMode(command string) VerifyMode {
+	lower := strings.ToLower(command)
+	if strings.Contains(lower, "pytest") {
+		return ModePytest
+	}
+	if strings.Contains(lower, "unittest") {
+		return ModeUnittest
+	}
+	if strings.TrimSpace(command) == "true" || strings.TrimSpace(command) == "" {
+		return ModeCustom
+	}
+	return ModeScript
+}
+
 // Run executes the verification command in the given sandbox and returns rewards.
 // It also reads any custom rewards written by the agent to /sandbox/.arena/rewards.jsonl.
 func (r *Runner) Run(ctx context.Context, sandboxID string, command string) ([]float64, error) {
 	if r.provider == nil {
 		return nil, fmt.Errorf("sandbox provider not configured")
 	}
+
+	mode := DetectMode(command)
 
 	// Execute the verification command.
 	res, err := r.provider.Exec(ctx, sandboxID, []string{"sh", "-c", command})
@@ -37,14 +67,25 @@ func (r *Runner) Run(ctx context.Context, sandboxID string, command string) ([]f
 
 	var rewards []float64
 
-	// Primary reward: command success = 1.0, failure = 0.0.
-	if res.ExitCode == 0 {
-		rewards = append(rewards, 1.0)
-	} else {
-		rewards = append(rewards, 0.0)
+	switch mode {
+	case ModePytest:
+		reward := ParsePytestDetailedOutput(string(res.Stdout) + "\n" + string(res.Stderr))
+		rewards = append(rewards, reward)
+
+	case ModeUnittest:
+		reward := ParseUnittestOutput(string(res.Stdout) + "\n" + string(res.Stderr))
+		rewards = append(rewards, reward)
+
+	case ModeScript, ModeCustom:
+		// Primary reward: command success = 1.0, failure = 0.0.
+		if res.ExitCode == 0 {
+			rewards = append(rewards, 1.0)
+		} else {
+			rewards = append(rewards, 0.0)
+		}
 	}
 
-	// Read agent-written custom rewards.
+	// Read agent-written custom rewards (always append if present).
 	customRewards, err := r.readRewardsJSONL(ctx, sandboxID)
 	if err == nil {
 		rewards = append(rewards, customRewards...)
@@ -81,6 +122,82 @@ func (r *Runner) readRewardsJSONL(ctx context.Context, sandboxID string) ([]floa
 		rewards = append(rewards, entry.Value)
 	}
 	return rewards, scanner.Err()
+}
+
+// ParsePytestDetailedOutput scans pytest stdout/stderr for pass/fail counts
+// and returns a fractional reward (passed / total).
+//
+// Matches lines like:
+//   "5 passed, 2 failed, 1 skipped in 0.03s"
+//   "1 passed in 0.01s"
+//   "3 failed in 0.02s"
+func ParsePytestDetailedOutput(output string) float64 {
+	// Look for the summary line.
+	re := regexp.MustCompile(`(\d+) passed(?:, (\d+) failed)?(?:, (\d+) skipped)?(?:, (\d+) error)? in `)
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		matches := re.FindStringSubmatch(line)
+		if matches == nil {
+			continue
+		}
+		passed, _ := strconv.Atoi(matches[1])
+		failed := 0
+		if matches[2] != "" {
+			failed, _ = strconv.Atoi(matches[2])
+		}
+		skipped := 0
+		if matches[3] != "" {
+			skipped, _ = strconv.Atoi(matches[3])
+		}
+		errors := 0
+		if matches[4] != "" {
+			errors, _ = strconv.Atoi(matches[4])
+		}
+		total := passed + failed + skipped + errors
+		if total == 0 {
+			return 0.0
+		}
+		return float64(passed) / float64(total)
+	}
+
+	// Fallback: binary pass/fall based on presence of "passed" without "failed".
+	return ParsePytestOutput(output)
+}
+
+// ParseUnittestOutput scans unittest stdout/stderr for OK/FAIL and returns reward.
+func ParseUnittestOutput(output string) float64 {
+	// Look for "OK" or "FAILED (failures=N, errors=M)" or "Ran N tests in ...".
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "OK") {
+			return 1.0
+		}
+		if strings.HasPrefix(line, "FAILED") || strings.HasPrefix(line, "FAIL") {
+			// Try to extract counts.
+			re := regexp.MustCompile(`failures=(\d+)|errors=(\d+)`)
+			matches := re.FindAllStringSubmatch(line, -1)
+			failures := 0
+			errors := 0
+			for _, m := range matches {
+				if m[1] != "" {
+					v, _ := strconv.Atoi(m[1])
+					failures += v
+				}
+				if m[2] != "" {
+					v, _ := strconv.Atoi(m[2])
+					errors += v
+				}
+			}
+			// If we cannot parse counts, return 0.
+			if failures == 0 && errors == 0 {
+				return 0.0
+			}
+			return 0.0 // partial failure; unittest doesn't give total count easily.
+		}
+	}
+	return 0.0
 }
 
 // ParsePytestOutput scans pytest stdout for pass/fail counts and returns a reward.

@@ -78,7 +78,7 @@ func (m *mockProviderWithCounter) WaitForDone(ctx context.Context, id string) er
 func (m *mockProviderWithCounter) Exec(ctx context.Context, id string, cmd []string) (*sandbox.ExecResult, error) {
 	m.callCount++
 	if m.callCount == 1 {
-		return &sandbox.ExecResult{ExitCode: 0}, nil
+		return &sandbox.ExecResult{ExitCode: 0, Stdout: []byte("1 passed in 0.01s\n")}, nil
 	}
 	return &sandbox.ExecResult{
 		ExitCode: 0,
@@ -107,6 +107,46 @@ func TestParsePytestOutput(t *testing.T) {
 		got := ParsePytestOutput(tc.input)
 		if got != tc.expected {
 			t.Fatalf("ParsePytestOutput(%q) = %f, want %f", tc.input, got, tc.expected)
+		}
+	}
+}
+
+func TestParsePytestDetailedOutput(t *testing.T) {
+	cases := []struct {
+		input    string
+		expected float64
+	}{
+		{"5 passed, 2 failed, 1 skipped in 0.03s", 5.0 / 8.0},
+		{"3 passed, 0 failed in 0.02s", 1.0},
+		{"0 passed, 3 failed in 0.01s", 0.0},
+		{"1 passed in 0.01s", 1.0},
+		{"2 passed, 1 failed, 1 error in 0.05s", 2.0 / 4.0},
+		{"no summary here", 0.0},
+	}
+	for _, tc := range cases {
+		got := ParsePytestDetailedOutput(tc.input)
+		if got != tc.expected {
+			t.Fatalf("ParsePytestDetailedOutput(%q) = %f, want %f", tc.input, got, tc.expected)
+		}
+	}
+}
+
+func TestDetectMode(t *testing.T) {
+	cases := []struct {
+		cmd      string
+		expected VerifyMode
+	}{
+		{"pytest -k regression", ModePytest},
+		{"python -m pytest", ModePytest},
+		{"python -m unittest discover", ModeUnittest},
+		{"bash /sandbox/verify.sh", ModeScript},
+		{"true", ModeCustom},
+		{"", ModeCustom},
+	}
+	for _, tc := range cases {
+		got := DetectMode(tc.cmd)
+		if got != tc.expected {
+			t.Fatalf("DetectMode(%q) = %d, want %d", tc.cmd, got, tc.expected)
 		}
 	}
 }

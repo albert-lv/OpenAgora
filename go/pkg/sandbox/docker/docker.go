@@ -36,11 +36,18 @@ func (p *Provider) run(ctx context.Context, args ...string) ([]byte, []byte, err
 // Create pulls the image if necessary and creates a container with a bind mount.
 func (p *Provider) Create(ctx context.Context, config *sandbox.Config) (*sandbox.Sandbox, error) {
 	// Ensure image is available.
-	_, _, err := p.run(ctx, "image", "inspect", config.Image)
-	if err != nil {
-		_, stderr, pullErr := p.run(ctx, "pull", config.Image)
-		if pullErr != nil {
-			return nil, fmt.Errorf("docker pull %s: %w (stderr: %s)", config.Image, pullErr, string(stderr))
+	// Some Docker daemon configurations cause 'image inspect' to fail even when
+	// the image is locally present (e.g. registry auth issues). We fall back to
+	// 'docker images' and then 'docker pull' only if truly missing.
+	_, _, inspectErr := p.run(ctx, "image", "inspect", config.Image)
+	if inspectErr != nil {
+		// Double-check with 'docker images' before attempting pull.
+		stdout, _, imagesErr := p.run(ctx, "images", "--format", "{{.Repository}}:{{.Tag}}", config.Image)
+		if imagesErr != nil || !strings.Contains(string(stdout), config.Image) {
+			_, stderr, pullErr := p.run(ctx, "pull", config.Image)
+			if pullErr != nil {
+				return nil, fmt.Errorf("docker pull %s: %w (stderr: %s)", config.Image, pullErr, string(stderr))
+			}
 		}
 	}
 
@@ -174,6 +181,15 @@ func (p *Provider) WaitForDone(ctx context.Context, id string) error {
 			}
 		}
 	}
+}
+
+// Logs retrieves the stdout/stderr logs of a sandbox container.
+func (p *Provider) Logs(ctx context.Context, id string, tail int) ([]byte, error) {
+	stdout, stderr, err := p.run(ctx, "logs", "--tail", strconv.Itoa(tail), id)
+	if err != nil {
+		return nil, fmt.Errorf("docker logs: %w (stderr: %s)", err, string(stderr))
+	}
+	return stdout, nil
 }
 
 // parseMemory converts human-readable memory strings (e.g. "8g", "512m") to bytes.

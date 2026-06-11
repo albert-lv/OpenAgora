@@ -1,0 +1,275 @@
+package server
+
+import (
+	"bytes"
+	"embed"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/albert-lv/agent-arena/go/pkg/trajectory"
+)
+
+//go:embed dashboard/static/*
+var staticFiles embed.FS
+
+// DashboardHandler returns an http.Handler for the Arena dashboard and API.
+func (s *ArenaServer) DashboardHandler() http.Handler {
+	mux := http.NewServeMux()
+
+	// API endpoints.
+	mux.HandleFunc("/api/rollouts", s.handleListRollouts)
+	mux.HandleFunc("/api/rollouts/", s.handleRolloutDetail)
+	mux.HandleFunc("/api/stats/overview", s.handleStatsOverview)
+	mux.HandleFunc("/api/stats/verify", s.handleStatsVerify)
+
+	// Static files and SPA fallback.
+	mux.Handle("/static/", http.FileServer(http.FS(staticFiles)))
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.Redirect(w, r, "/", http.StatusFound)
+			return
+		}
+		data, err := staticFiles.ReadFile("dashboard/static/index.html")
+		if err != nil {
+			http.Error(w, "dashboard not found", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(data)
+	})
+
+	return mux
+}
+
+type rolloutJSON struct {
+	ID         string     `json:"rollout_id"`
+	TraceID    string     `json:"trace_id"`
+	TaskID     string     `json:"task_id"`
+	Status     string     `json:"status"`
+	Reward     float64    `json:"reward"`
+	CreatedAt  time.Time  `json:"created_at"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+}
+
+func (s *ArenaServer) handleListRollouts(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	items := []rolloutJSON{}
+	for _, ro := range s.rollouts {
+		items = append(items, rolloutJSON{
+			ID:         ro.ID,
+			TraceID:    ro.TraceID,
+			TaskID:     ro.TaskID,
+			Status:     ro.Status,
+			Reward:     ro.Reward,
+			CreatedAt:  ro.CreatedAt,
+			FinishedAt: ro.FinishedAt,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(items)
+}
+
+func (s *ArenaServer) handleRolloutDetail(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/rollouts/")
+	parts := strings.SplitN(path, "/", 2)
+	rolloutID := parts[0]
+
+	s.mu.RLock()
+	ro, ok := s.rollouts[rolloutID]
+	s.mu.RUnlock()
+	if !ok {
+		http.Error(w, "rollout not found", http.StatusNotFound)
+		return
+	}
+
+	// If trajectory subpath requested.
+	if len(parts) == 2 && parts[1] == "trajectory" {
+		s.handleTrajectory(w, r, rolloutID)
+		return
+	}
+
+	// If logs subpath requested.
+	if len(parts) == 2 && parts[1] == "logs" {
+		s.handleRolloutLogs(w, r, ro)
+		return
+	}
+
+	resp := rolloutJSON{
+		ID:         ro.ID,
+		TraceID:    ro.TraceID,
+		TaskID:     ro.TaskID,
+		Status:     ro.Status,
+		Reward:     ro.Reward,
+		CreatedAt:  ro.CreatedAt,
+		FinishedAt: ro.FinishedAt,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (s *ArenaServer) handleRolloutLogs(w http.ResponseWriter, r *http.Request, ro *Rollout) {
+	logs, err := s.sandboxProvider.Logs(r.Context(), ro.SandboxID, 100)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("read logs: %v", err), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Write(logs)
+}
+
+func (s *ArenaServer) handleTrajectory(w http.ResponseWriter, r *http.Request, rolloutID string) {
+	var buf bytes.Buffer
+	if err := s.trajBackend.Read(r.Context(), rolloutID, &buf); err != nil {
+		http.Error(w, fmt.Sprintf("read trajectory: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	var items []map[string]any
+	for _, line := range strings.Split(buf.String(), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var step trajectory.Step
+		if err := json.Unmarshal([]byte(line), &step); err != nil {
+			continue
+		}
+		items = append(items, trajectoryStepToMap(&step))
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(items)
+}
+
+func trajectoryStepToMap(step *trajectory.Step) map[string]any {
+	m := map[string]any{
+		"rollout_id": step.RolloutID,
+		"step_id":    step.StepID,
+		"timestamp":  step.Timestamp,
+		"trace_id":   "",
+	}
+	if step.Metadata != nil {
+		m["trace_id"] = step.Metadata["trace_id"]
+	}
+	if step.Request != nil {
+		m["request"] = map[string]any{
+			"endpoint": step.Request.Endpoint,
+			"model":    step.Request.Model,
+		}
+	}
+	if step.Response != nil {
+		resp := map[string]any{}
+		if step.Response.Usage != nil {
+			resp["usage"] = map[string]any{
+				"prompt_tokens":     step.Response.Usage.PromptTokens,
+				"completion_tokens": step.Response.Usage.CompletionTokens,
+			}
+		}
+		if len(step.Response.Logprobs) > 0 {
+			resp["logprobs_len"] = len(step.Response.Logprobs)
+		}
+		m["response"] = resp
+	}
+	return m
+}
+
+func (s *ArenaServer) handleStatsOverview(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	total := len(s.rollouts)
+	var active, success, failed int
+	var totalReward float64
+	var totalTokens int64
+
+	for _, ro := range s.rollouts {
+		switch ro.Status {
+		case "running":
+			active++
+		case "success":
+			success++
+		case "failed":
+			failed++
+		}
+		totalReward += ro.Reward
+	}
+
+	avgReward := 0.0
+	if total > 0 {
+		avgReward = totalReward / float64(total)
+	}
+
+	// Count trajectory steps and tokens.
+	for _, ro := range s.rollouts {
+		var buf bytes.Buffer
+		if err := s.trajBackend.Read(r.Context(), ro.ID, &buf); err != nil {
+			continue
+		}
+		for _, line := range strings.Split(buf.String(), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			var step trajectory.Step
+			if err := json.Unmarshal([]byte(line), &step); err != nil {
+				continue
+			}
+			if step.Response != nil && step.Response.Usage != nil {
+				totalTokens += int64(step.Response.Usage.PromptTokens + step.Response.Usage.CompletionTokens)
+			}
+		}
+	}
+
+	resp := map[string]any{
+		"total_rollouts":  total,
+		"active_rollouts": active,
+		"success_count":   success,
+		"failed_count":    failed,
+		"avg_reward":      avgReward,
+		"total_tokens":    totalTokens,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (s *ArenaServer) handleStatsVerify(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	total := 0
+	success := 0
+	var totalReward float64
+
+	for _, ro := range s.rollouts {
+		if ro.Status != "pending" && ro.Status != "running" {
+			total++
+			totalReward += ro.Reward
+			if ro.Reward > 0 {
+				success++
+			}
+		}
+	}
+
+	successRate := 0.0
+	if total > 0 {
+		successRate = float64(success) / float64(total)
+	}
+	avgReward := 0.0
+	if total > 0 {
+		avgReward = totalReward / float64(total)
+	}
+
+	resp := map[string]any{
+		"total":        total,
+		"success":      success,
+		"success_rate": successRate,
+		"avg_reward":   avgReward,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}

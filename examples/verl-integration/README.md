@@ -1,87 +1,199 @@
-# Arena + veRL 端到端 Demo (Mock 环境)
+# Arena + veRL End-to-End Integration
 
-这个目录包含一个 **完全自包含** 的端到端 demo，演示 ArenaRolloutProvider 如何在 mock 环境下生成 `token_level_rewards`，并与 veRL 的 DataProto 格式对齐。
+This example demonstrates how to use **Agent Arena** as the agent execution and
+verification backend for **veRL** training.
 
-## 前置条件
+## Architecture
 
-只需要 Python 3.10+ 和 PyTorch（无需 Docker、vLLM、GPU 或真实 Arena server）：
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         veRL Trainer                             │
+│  ┌─────────────┐    ┌─────────────────┐    ┌─────────────────┐  │
+│  │ FSDP Actor  │◄──►│  ArenaAgentLoop │◄──►│  Arena Server   │  │
+│  │  (GPU)      │    │  (Agent Loop)   │    │  (gRPC :9090)   │  │
+│  └─────────────┘    └─────────────────┘    └─────────────────┘  │
+│         ▲                                           │            │
+│         │                                           │ Docker     │
+│         │                                           ▼            │
+│  ┌─────────────┐                         ┌─────────────────┐    │
+│  │ vLLM Server │◄────────────────────────│  Agent Sandbox  │    │
+│  │  (GPU)      │   HTTP /v1/chat/completions               │    │
+│  └─────────────┘                         └─────────────────┘    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+Key points:
+
+- **veRL's vLLM/SGLang server** stays in charge of LLM inference and weight
+  updates. Nothing changes on the inference side.
+- **ArenaAgentLoop** replaces veRL's built-in `single_turn_agent` or
+  `tool_agent`. It submits each training sample to Arena as a sandboxed
+  rollout.
+- **Arena Proxy** transparently forwards the agent's LLM calls to the veRL
+  inference server.
+- **Arena Verification** computes the reward (e.g. `pytest`) and returns it to
+  veRL via `AgentLoopOutput.reward_score`.
+
+## Prerequisites
+
+1. **Arena Server** running (see project root `README.md`).
+2. **veRL** installed with your target backend (vLLM or SGLang).
+3. An **agent Docker image** that follows the
+   [Arena Sandbox Contract](../../docs/sandbox-contract.md).
+
+## Quick Start
+
+### 1. Start Arena Server
 
 ```bash
-pip install torch tensordict
+cd /path/to/agent-arena
+make build
+./bin/arena-server
+# Server listening on :9090
 ```
 
-如果已安装 arena-verl 和 arena-sdk（开发模式）：
+### 2. Build or Pull an Agent Image
 
 ```bash
-pip install -e python/arena-sdk
-pip install -e python/arena-verl
+# Using the minimal example agent from the repo
+make docker-agent
+# Produces: arena-agent-minimal:latest
 ```
 
-> **注意**：veRL 和 transformers 是可选依赖。如果未安装，demo 会自动降级到纯 mock 模式，跳过 veRL DataProto 断言，但仍能验证核心逻辑。
+Or build your own (e.g. OpenHands, SWE-agent) as long as it reads
+`/sandbox/.arena/task.json` and routes LLM calls through `OPENAI_BASE_URL`.
 
-## 快速运行
+### 3. Launch veRL with Arena Agent Loop
+
+#### Option A: Environment Variables (Quickest)
 
 ```bash
-cd examples/verl-integration
-python demo_train_step.py
+export ARENA_ENDPOINT="localhost:9090"
+export ARENA_AGENT_IMAGE="arena-agent-minimal:latest"
+export ARENA_LLM_BACKEND="http://localhost:8000/v1"   # your vLLM/SGLang server
+export ARENA_VERIFY_COMMAND="pytest -k regression"
+
+python -m verl.trainer.main_ppo \
+  actor_rollout_ref.rollout.agent.default_agent_loop="arena_agent" \
+  ...  # rest of your normal veRL args
 ```
 
-预期输出（摘要）：
+> **Note:** You must `import arena_verl` in your training script (or in
+> `verl/experimental/agent_loop/__init__.py`) so that the `@register("arena_agent")`
+> decorator executes before veRL instantiates the agent loop.
 
-```
-======================================================================
-Arena + veRL End-to-End Demo (token-level rewards)
-======================================================================
+#### Option B: Hydra Config File (Recommended for Reproducibility)
 
-Provider created successfully (mock client + mock tokenizer).
-Fake prompt batch built: bsz=2, prompt_length=10
+Create `arena_agent_loop.yaml`:
 
-Calling generate_sequences() ...
-Done.
-
-----------------------------------------------------------------------
-Output field inspection
-----------------------------------------------------------------------
-  prompts                   shape=[2, 10]      dtype=torch.int64
-  responses                 shape=[2, 64]      dtype=torch.int64
-  response_mask             shape=[2, 64]      dtype=torch.int64
-  token_level_rewards       shape=[2, 64]      dtype=torch.float32
-  input_ids                 shape=[2, 74]      dtype=torch.int64
-  attention_mask            shape=[2, 74]      dtype=torch.int64
-  position_ids              shape=[2, 74]      dtype=torch.int64
-
-----------------------------------------------------------------------
-Assertion checks
-----------------------------------------------------------------------
-  [PASS] token_level_rewards exists with shape (2, 64) and dtype float32
-  [PASS] sample 0: valid_tokens=6, reward_per_token=0.1667
-  [PASS] sample 1: valid_tokens=6, reward_per_token=0.1667
-
-  Episode rewards (sum over response_length): [1.0, 1.0]
-  [PASS] Episode reward conserved (sum == 1.0 for each sample)
-
-======================================================================
-All assertions passed!
-...
-======================================================================
+```yaml
+# arena_agent_loop.yaml
+name: arena_agent
+_target_: arena_verl.agent_loop.ArenaAgentLoop
+trainer_config:
+  config: ${config}
+server_manager: ${server_manager}
+tokenizer: ${tokenizer}
+processor: ${processor}
+dataset_cls: ${dataset_cls}
+data_config: ${data_config}
 ```
 
-## 验证要点
+Then reference it in your veRL launch command:
 
-1. **`token_level_rewards` 字段存在** — 与 `response_ids` 同形状 `[bsz, response_length]`
-2. **dtype 为 float32** — 符合 veRL 对 reward 张量的期望
-3. **episode reward 守恒** — 每个样本的 `token_level_rewards.sum()` 等于原始 episode reward（1.0）
-4. **与 `response_mask` 对齐** — pad token 的 reward 为 0，有效 token 的 reward 均匀分配
+```bash
+python -m verl.trainer.main_ppo \
+  actor_rollout_ref.rollout.agent.agent_loop_config_path=arena_agent_loop.yaml \
+  actor_rollout_ref.rollout.agent.default_agent_loop=arena_agent \
+  ...
+```
 
-## 文件说明
+### 4. Minimal Launch Script
 
-| 文件 | 说明 |
-|------|------|
-| `demo_train_step.py` | 主 demo 脚本，包含 MockArenaClient、MockTokenizer、和完整断言 |
-| `train.py` | 原始 veRL 集成示例骨架（供参考） |
+`train_grpo_arena.sh`:
 
-## 扩展建议
+```bash
+#!/bin/bash
+set -e
 
-- 将 `MockArenaClient` 替换为真实 `ArenaClient` 即可连接真实 Arena server
-- 将 `MockTokenizer` 替换为 `AutoTokenizer.from_pretrained(model_path)` 即可使用真实 LLM tokenizer
-- 将 `verify_command` 设置为真实 pytest 命令即可运行带验证的 rollout
+# Arena settings
+export ARENA_ENDPOINT="localhost:9090"
+export ARENA_AGENT_IMAGE="arena-agent-minimal:latest"
+export ARENA_LLM_BACKEND="http://localhost:8000/v1"
+export ARENA_VERIFY_COMMAND="pytest -k regression"
+export ARENA_TIMEOUT_SECONDS="600"
+
+# Ensure arena_verl is imported so the agent loop registers
+export PYTHONPATH="/path/to/agent-arena/python/arena-verl/src:${PYTHONPATH}"
+
+python -m verl.trainer.main_ppo \
+  algorithm.adv_estimator=grpo \
+  data.train_files=... \
+  data.val_files=... \
+  data.train_batch_size=32 \
+  data.max_prompt_length=512 \
+  data.max_response_length=1024 \
+  actor_rollout_ref.model.path=Qwen/Qwen2.5-7B-Instruct \
+  actor_rollout_ref.rollout.name=vllm \
+  actor_rollout_ref.rollout.agent.default_agent_loop=arena_agent \
+  trainer.n_gpus_per_node=4 \
+  trainer.nnodes=1
+```
+
+## How It Works
+
+1. **Data loading** — veRL loads your dataset (e.g. SWE-bench, GSM8K with tools).
+2. **Rollout** — For each batch sample, `ArenaAgentLoop.run()`:
+   - Encodes the prompt messages into a task JSON.
+   - Calls `ArenaClient.create_rollout()` to start a Docker sandbox.
+   - The sandboxed agent reads the task and starts making LLM calls.
+   - LLM calls hit `Arena Proxy`, which forwards them to your vLLM/SGLang
+     server.
+   - Arena captures every request/response into the trajectory data plane.
+   - When the agent writes `/sandbox/.arena/done`, Arena runs verification
+     (e.g. `pytest`) and computes a reward.
+3. **Return to trainer** — `ArenaAgentLoop` fetches the trajectory,
+   tokenizes the prompt + response, and returns an `AgentLoopOutput`.
+   veRL's post-processing pads tensors and assembles the `DataProto` batch.
+4. **Training** — veRL computes advantages and updates the actor model as
+   usual. The updated weights are pushed to the vLLM/SGLang server for the
+   next rollout round.
+
+## Customization
+
+### Per-Sample Agent Images or Verify Commands
+
+If different samples need different sandbox images, you can subclass
+`ArenaAgentLoop` and override `run()` to read `kwargs["extra_info"]`:
+
+```python
+class CustomArenaAgentLoop(ArenaAgentLoop):
+    async def run(self, sampling_params, **kwargs):
+        extra = kwargs.get("extra_info", {})
+        self._agent_image = extra.get("arena_image", self._agent_image)
+        self._verify_command = extra.get("arena_verify", self._verify_command)
+        return await super().run(sampling_params, **kwargs)
+```
+
+### Multi-Turn Agents
+
+The default `ArenaAgentLoop` treats the entire sandbox execution as a single
+response (`response_mask = [1, 1, ..., 1]`). If your agent performs explicit
+tool calls that you want to mask as observations (`response_mask = 0`), you
+should implement a custom agent loop that parses Arena's trajectory step by
+step.
+
+## Troubleshooting
+
+| Symptom | Likely Cause | Fix |
+|---------|-------------|-----|
+| `Agent loop arena_agent not registered` | `arena_verl` not imported before veRL instantiates the loop | Add `import arena_verl` at the top of your training script |
+| `sandbox create: ...` | Docker not available or image not pulled | Check `docker ps` and `docker pull $ARENA_AGENT_IMAGE` |
+| `token budget exhausted` | Agent is making too many LLM calls | Increase `max_tokens_budget` in sampling config or reduce agent turns |
+| Reward always `0.0` | Verify command failing silently | Check Arena server logs; run verify command manually inside the sandbox |
+
+## See Also
+
+- [Arena Sandbox Contract](../../docs/sandbox-contract.md)
+- [Arena Architecture](../../docs/architecture.md)
+- [veRL Agent Loop Docs](https://github.com/volcengine/verl/tree/main/docs) (upstream)
