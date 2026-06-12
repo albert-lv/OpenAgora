@@ -3,7 +3,7 @@
 Minimal CPU PPO training demo with Arena Agent Loop.
 
 This script demonstrates a complete RL training loop:
-1. Load a tiny model (Qwen3.5-0.8B)
+1. Load a tiny model (default: Qwen/Qwen2.5-0.5B-Instruct)
 2. For each training iteration, run Arena rollouts
 3. Post-process outputs into tensors
 4. Compute old logprobs and value estimates
@@ -15,6 +15,7 @@ Designed for CPU-only environments. No Ray, no FSDP, no vLLM.
 
 import asyncio
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -30,17 +31,19 @@ import ray
 RAY_ADDRESS = os.environ.get("RAY_ADDRESS")
 if RAY_ADDRESS:
     ray.init(address=RAY_ADDRESS, ignore_reinit_error=True)
-    print(f"Connected to Ray cluster: {RAY_ADDRESS}")
 else:
     ray.init(ignore_reinit_error=True)
-    print("Ray running in local mode")
 
-# Arena imports
-sys.path.insert(0, "/opt/arena-verl/src")
-sys.path.insert(0, "/opt/arena-sdk/src")
+# Allow running inside the Docker image (/opt paths) or from the repo root.
+for _arena_path in ("/opt/arena-verl/src", "/opt/arena-sdk/src"):
+    if os.path.isdir(_arena_path) and _arena_path not in sys.path:
+        sys.path.insert(0, _arena_path)
 
-from arena_sdk.client import ArenaClient
-from arena_verl.agent_loop import ArenaAgentLoop
+from arena_sdk.client import ArenaClient  # noqa: E402
+from arena_verl.agent_loop import ArenaAgentLoop  # noqa: E402
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+logger = logging.getLogger(__name__)
 
 # Mock veRL types if not available (standalone run)
 try:
@@ -60,7 +63,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen3.5-0.8B")
+MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-0.5B-Instruct")
 DATASET_PATH = os.environ.get("DATASET_PATH", "/app/data/demo_dataset.parquet")
 ARENA_ENDPOINT = os.environ.get("ARENA_ENDPOINT", "host.docker.internal:9090")
 ARENA_AGENT_IMAGE = os.environ.get("ARENA_AGENT_IMAGE", "arena-agent-minimal:latest")
@@ -94,7 +97,7 @@ def load_dataset(path: str):
 
         df = pd.read_parquet(path)
     except Exception as e:
-        print(f"Failed to load {path}: {e}")
+        logger.info(f"Failed to load {path}: {e}")
         # Fallback: generate in-memory
         return [
             {
@@ -178,7 +181,7 @@ async def run_rollouts(agent_loop: SimpleArenaAgentLoop, dataset: list[dict]):
     outputs = []
     for sample in dataset[:BATCH_SIZE]:
         idx = sample["index"]
-        print(f"\n--- Sample {idx} ---")
+        logger.info(f"\n--- Sample {idx} ---")
         out = await agent_loop.run(
             sampling_params={"temperature": 0.3, "top_p": 0.9},
             raw_prompt=sample["raw_prompt"],
@@ -186,7 +189,7 @@ async def run_rollouts(agent_loop: SimpleArenaAgentLoop, dataset: list[dict]):
             extra_info=sample.get("extra_info", {}),
         )
         outputs.append(out)
-        print(f"reward={out.reward_score}, response_tokens={len(out.response_ids)}, logprobs={'yes' if out.response_logprobs else 'no'}")
+        logger.info(f"reward={out.reward_score}, response_tokens={len(out.response_ids)}, logprobs={'yes' if out.response_logprobs else 'no'}")
     return outputs
 
 
@@ -312,7 +315,7 @@ def ppo_update(
     optimizer.step()
     t4 = time.time()
 
-    print(f"    fwd={t1-t0:.1f}s loss={t2-t1:.1f}s bwd={t3-t2:.1f}s step={t4-t3:.1f}s", flush=True)
+    logger.info(f"    fwd={t1-t0:.1f}s loss={t2-t1:.1f}s bwd={t3-t2:.1f}s step={t4-t3:.1f}s", flush=True)
 
     return {
         "loss": loss.item(),
@@ -330,40 +333,40 @@ def save_checkpoint(actor_critic: ActorCritic, tokenizer, iteration: int):
     actor_critic.model.save_pretrained(checkpoint_path)
     tokenizer.save_pretrained(checkpoint_path)
     torch.save(actor_critic.value_head.state_dict(), checkpoint_path / "value_head.pt")
-    print(f"Checkpoint saved to {checkpoint_path}")
+    logger.info(f"Checkpoint saved to {checkpoint_path}")
 
 
 def main():
-    print("=" * 60)
-    print("Arena + veRL CPU PPO Demo Trainer")
-    print("=" * 60)
-    print(f"Model: {MODEL_NAME}")
-    print(f"Device: {DEVICE}")
-    print(f"Arena endpoint: {ARENA_ENDPOINT}")
-    print(f"LLM backend: {ARENA_LLM_BACKEND}")
-    print(f"PPO iterations: {NUM_ITERATIONS}, epochs/iteration: {PPO_EPOCHS}")
-    print()
+    logger.info("=" * 60)
+    logger.info("Arena + veRL CPU PPO Demo Trainer")
+    logger.info("=" * 60)
+    logger.info(f"Model: {MODEL_NAME}")
+    logger.info(f"Device: {DEVICE}")
+    logger.info(f"Arena endpoint: {ARENA_ENDPOINT}")
+    logger.info(f"LLM backend: {ARENA_LLM_BACKEND}")
+    logger.info(f"PPO iterations: {NUM_ITERATIONS}, epochs/iteration: {PPO_EPOCHS}")
+    logger.info()
 
     # ------------------------------------------------------------------
     # 1. Load model & tokenizer
     # ------------------------------------------------------------------
-    print("Loading model...")
+    logger.info("Loading model...")
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
     actor_critic = ActorCritic(MODEL_NAME).to(DEVICE)
-    print(f"Model loaded: {sum(p.numel() for p in actor_critic.parameters()) / 1e6:.1f}M params")
+    logger.info(f"Model loaded: {sum(p.numel() for p in actor_critic.parameters()) / 1e6:.1f}M params")
 
     optimizer = torch.optim.AdamW(actor_critic.parameters(), lr=LEARNING_RATE)
-    print()
+    logger.info()
 
     # ------------------------------------------------------------------
     # 2. Load dataset
     # ------------------------------------------------------------------
     dataset = load_dataset(DATASET_PATH)
-    print(f"Dataset loaded: {len(dataset)} samples")
-    print()
+    logger.info(f"Dataset loaded: {len(dataset)} samples")
+    logger.info()
 
     agent_loop = SimpleArenaAgentLoop(tokenizer=tokenizer)
 
@@ -371,9 +374,9 @@ def main():
     # 3. Training loop
     # ------------------------------------------------------------------
     for iteration in range(1, NUM_ITERATIONS + 1):
-        print("\n" + "=" * 60)
-        print(f"Iteration {iteration}/{NUM_ITERATIONS}")
-        print("=" * 60)
+        logger.info("\n" + "=" * 60)
+        logger.info(f"Iteration {iteration}/{NUM_ITERATIONS}")
+        logger.info("=" * 60)
 
         # 3a. Rollouts
         actor_critic.eval()
@@ -381,9 +384,9 @@ def main():
 
         # 3b. Post-process
         batch = postprocess_to_tensors(outputs, tokenizer, tokenizer.pad_token_id)
-        print("\nBatch tensor shapes")
+        logger.info("\nBatch tensor shapes")
         for k, v in batch.items():
-            print(f"  {k:20s}: {v.shape}  dtype={v.dtype}")
+            logger.info(f"  {k:20s}: {v.shape}  dtype={v.dtype}")
 
         # 3c. Compute old logprobs, values, advantages
         old_logprobs, old_values, advantages, returns = compute_ppo_metrics(
@@ -391,14 +394,14 @@ def main():
         )
 
         avg_reward = batch["rewards"].mean().item()
-        print(f"\n  Avg reward:     {avg_reward:.4f}")
-        print(f"  Avg old logprob: {old_logprobs.mean().item():.4f}")
-        print(f"  Avg value:      {old_values.mean().item():.4f}")
-        print(f"  Avg advantage:  {advantages.mean().item():.4f}")
+        logger.info(f"\n  Avg reward:     {avg_reward:.4f}")
+        logger.info(f"  Avg old logprob: {old_logprobs.mean().item():.4f}")
+        logger.info(f"  Avg value:      {old_values.mean().item():.4f}")
+        logger.info(f"  Avg advantage:  {advantages.mean().item():.4f}")
 
         # 3d. PPO updates
         actor_critic.train()
-        print("\nPPO updates")
+        logger.info("\nPPO updates")
         for epoch in range(PPO_EPOCHS):
             metrics = ppo_update(
                 actor_critic,
@@ -409,7 +412,7 @@ def main():
                 returns,
                 tokenizer.pad_token_id,
             )
-            print(
+            logger.info(
                 f"  epoch {epoch + 1}/{PPO_EPOCHS}: "
                 f"loss={metrics['loss']:.4f}, "
                 f"policy_loss={metrics['policy_loss']:.4f}, "
@@ -421,9 +424,9 @@ def main():
         # 3e. Save checkpoint
         save_checkpoint(actor_critic, tokenizer, iteration)
 
-    print("\n" + "=" * 60)
-    print("Training complete!")
-    print("=" * 60)
+    logger.info("\n" + "=" * 60)
+    logger.info("Training complete!")
+    logger.info("=" * 60)
 
 
 if __name__ == "__main__":

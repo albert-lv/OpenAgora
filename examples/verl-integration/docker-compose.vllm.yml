@@ -28,8 +28,8 @@ services:
       dockerfile: docker/Dockerfile.vllm
     container_name: arena-vllm
     command: >
-      --model ${VLLM_MODEL:-Qwen/Qwen3.5-0.8B}
-      --served-model-name ${VLLM_SERVED_MODEL_NAME:-qwen3.5:0.8b}
+      --model ${VLLM_MODEL:-Qwen/Qwen2.5-0.5B-Instruct}
+      --served-model-name ${VLLM_SERVED_MODEL_NAME:-qwen2.5-0.5b-instruct}
       --host 0.0.0.0
       --port 8000
       --trust-remote-code
@@ -96,7 +96,7 @@ services:
       dockerfile: docker/Dockerfile.cpu-trainer
     container_name: arena-trainer
     environment:
-      - MODEL_NAME=${VLLM_MODEL:-Qwen/Qwen3.5-0.8B}
+      - MODEL_NAME=${VLLM_MODEL:-Qwen/Qwen2.5-0.5B-Instruct}
       - DATASET_PATH=/app/data/demo_dataset.parquet
       - ARENA_ENDPOINT=arena-server:9090
       - ARENA_AGENT_IMAGE=arena-demo-agent:latest
