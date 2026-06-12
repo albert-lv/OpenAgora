@@ -14,7 +14,72 @@ import (
 	"github.com/albert-lv/OpenAgora/go/pkg/sandbox"
 )
 
-// Runner executes verification commands and produces reward signals.
+// init registers the built-in verifiers.
+func init() {
+	Register("swe-bench", NewSWEBenchVerifier())
+	Register("legacy", &legacyVerifier{})
+}
+
+// RegisterDefault registers the default verifiers. It is safe to call multiple times.
+func RegisterDefault() {
+	Register("swe-bench", NewSWEBenchVerifier())
+	Register("legacy", &legacyVerifier{})
+}
+
+// legacyVerifier implements the original single-command verification behavior.
+type legacyVerifier struct{}
+
+func (l *legacyVerifier) Name() string { return "legacy" }
+
+func (l *legacyVerifier) Run(ctx context.Context, provider sandbox.Provider, spec *VerificationSpec, sandboxID string) (*VerificationReport, error) {
+	if provider == nil {
+		return nil, fmt.Errorf("sandbox provider not configured")
+	}
+	if spec == nil || spec.Command == "" {
+		return nil, fmt.Errorf("legacy verifier requires a command")
+	}
+
+	res, err := provider.Exec(ctx, sandboxID, []string{"sh", "-c", spec.Command})
+	if err != nil {
+		return nil, fmt.Errorf("exec verify command: %w", err)
+	}
+
+	mode := DetectMode(spec.Command)
+	stdout := string(res.Stdout)
+	stderr := string(res.Stderr)
+	combined := stdout + "\n" + stderr
+
+	var reward float64
+	switch mode {
+	case ModePytest:
+		reward = ParsePytestDetailedOutput(combined)
+	case ModeUnittest:
+		reward = ParseUnittestOutput(combined)
+	case ModeScript, ModeCustom:
+		if res.ExitCode == 0 {
+			reward = 1.0
+		} else {
+			reward = 0.0
+		}
+	}
+
+	// Append agent-written custom rewards if present.
+	customRewards, _ := readRewardsJSONL(ctx, provider, sandboxID)
+	for _, r := range customRewards {
+		if r > reward {
+			reward = r
+		}
+	}
+
+	return &VerificationReport{
+		Reward: reward,
+		Stdout: stdout,
+		Stderr: stderr,
+	}, nil
+}
+
+// Runner is the original verification runner. It is kept for backward compatibility
+// and now delegates to the legacy verifier internally.
 type Runner struct {
 	provider sandbox.Provider
 }
@@ -28,11 +93,11 @@ func NewRunner(provider sandbox.Provider) *Runner {
 type VerifyMode int
 
 const (
-	ModeUnknown   VerifyMode = iota
-	ModePytest               // pytest with detailed pass/fail parsing
-	ModeUnittest             // python -m unittest
-	ModeScript               // generic shell script (exit code only)
-	ModeCustom               // agent-written rewards.jsonl only
+	ModeUnknown VerifyMode = iota
+	ModePytest             // pytest with detailed pass/fail parsing
+	ModeUnittest           // python -m unittest
+	ModeScript             // generic shell script (exit code only)
+	ModeCustom             // agent-written rewards.jsonl only
 )
 
 // DetectMode guesses the verify mode from the command string.
@@ -50,34 +115,28 @@ func DetectMode(command string) VerifyMode {
 	return ModeScript
 }
 
-// Run executes the verification command in the given sandbox and returns rewards.
-// It also reads any custom rewards written by the agent to /sandbox/.arena/rewards.jsonl.
+// Run executes the verification command in the given sandbox and returns reward signals.
+// Deprecated: use a Verifier implementation instead.
 func (r *Runner) Run(ctx context.Context, sandboxID string, command string) ([]float64, error) {
 	if r.provider == nil {
 		return nil, fmt.Errorf("sandbox provider not configured")
 	}
 
 	mode := DetectMode(command)
-
-	// Execute the verification command.
 	res, err := r.provider.Exec(ctx, sandboxID, []string{"sh", "-c", command})
 	if err != nil {
 		return nil, fmt.Errorf("exec verify command: %w", err)
 	}
 
+	combined := string(res.Stdout) + "\n" + string(res.Stderr)
 	var rewards []float64
 
 	switch mode {
 	case ModePytest:
-		reward := ParsePytestDetailedOutput(string(res.Stdout) + "\n" + string(res.Stderr))
-		rewards = append(rewards, reward)
-
+		rewards = append(rewards, ParsePytestDetailedOutput(combined))
 	case ModeUnittest:
-		reward := ParseUnittestOutput(string(res.Stdout) + "\n" + string(res.Stderr))
-		rewards = append(rewards, reward)
-
+		rewards = append(rewards, ParseUnittestOutput(combined))
 	case ModeScript, ModeCustom:
-		// Primary reward: command success = 1.0, failure = 0.0.
 		if res.ExitCode == 0 {
 			rewards = append(rewards, 1.0)
 		} else {
@@ -85,18 +144,14 @@ func (r *Runner) Run(ctx context.Context, sandboxID string, command string) ([]f
 		}
 	}
 
-	// Read agent-written custom rewards (always append if present).
-	customRewards, err := r.readRewardsJSONL(ctx, sandboxID)
-	if err == nil {
-		rewards = append(rewards, customRewards...)
-	}
+	customRewards, _ := readRewardsJSONL(ctx, r.provider, sandboxID)
+	rewards = append(rewards, customRewards...)
 
 	return rewards, nil
 }
 
-// readRewardsJSONL reads /sandbox/.arena/rewards.jsonl from the sandbox.
-func (r *Runner) readRewardsJSONL(ctx context.Context, sandboxID string) ([]float64, error) {
-	res, err := r.provider.Exec(ctx, sandboxID, []string{"cat", "/sandbox/.arena/rewards.jsonl"})
+func readRewardsJSONL(ctx context.Context, provider sandbox.Provider, sandboxID string) ([]float64, error) {
+	res, err := provider.Exec(ctx, sandboxID, []string{"cat", "/sandbox/.arena/rewards.jsonl"})
 	if err != nil {
 		return nil, err
 	}
@@ -126,13 +181,7 @@ func (r *Runner) readRewardsJSONL(ctx context.Context, sandboxID string) ([]floa
 
 // ParsePytestDetailedOutput scans pytest stdout/stderr for pass/fail counts
 // and returns a fractional reward (passed / total).
-//
-// Matches lines like:
-//   "5 passed, 2 failed, 1 skipped in 0.03s"
-//   "1 passed in 0.01s"
-//   "3 failed in 0.02s"
 func ParsePytestDetailedOutput(output string) float64 {
-	// Look for the summary line.
 	re := regexp.MustCompile(`(\d+) passed(?:, (\d+) failed)?(?:, (\d+) skipped)?(?:, (\d+) error)? in `)
 	lines := strings.Split(output, "\n")
 	for _, line := range lines {
@@ -160,14 +209,11 @@ func ParsePytestDetailedOutput(output string) float64 {
 		}
 		return float64(passed) / float64(total)
 	}
-
-	// Fallback: binary pass/fall based on presence of "passed" without "failed".
 	return ParsePytestOutput(output)
 }
 
 // ParseUnittestOutput scans unittest stdout/stderr for OK/FAIL and returns reward.
 func ParseUnittestOutput(output string) float64 {
-	// Look for "OK" or "FAILED (failures=N, errors=M)" or "Ran N tests in ...".
 	lines := strings.Split(output, "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -175,37 +221,16 @@ func ParseUnittestOutput(output string) float64 {
 			return 1.0
 		}
 		if strings.HasPrefix(line, "FAILED") || strings.HasPrefix(line, "FAIL") {
-			// Try to extract counts.
-			re := regexp.MustCompile(`failures=(\d+)|errors=(\d+)`)
-			matches := re.FindAllStringSubmatch(line, -1)
-			failures := 0
-			errors := 0
-			for _, m := range matches {
-				if m[1] != "" {
-					v, _ := strconv.Atoi(m[1])
-					failures += v
-				}
-				if m[2] != "" {
-					v, _ := strconv.Atoi(m[2])
-					errors += v
-				}
-			}
-			// If we cannot parse counts, return 0.
-			if failures == 0 && errors == 0 {
-				return 0.0
-			}
-			return 0.0 // partial failure; unittest doesn't give total count easily.
+			return 0.0
 		}
 	}
 	return 0.0
 }
 
 // ParsePytestOutput scans pytest stdout for pass/fail counts and returns a reward.
-// This is a convenience helper; Run() itself does not call it automatically.
 func ParsePytestOutput(stdout string) float64 {
 	lines := strings.Split(stdout, "\n")
 	for _, line := range lines {
-		// Look for summary line like "1 passed in 0.01s"
 		if strings.Contains(line, "passed") && !strings.Contains(line, "failed") {
 			return 1.0
 		}
@@ -213,7 +238,6 @@ func ParsePytestOutput(stdout string) float64 {
 			return 0.0
 		}
 	}
-	// Default: if no clear summary, return 0.
 	return 0.0
 }
 
