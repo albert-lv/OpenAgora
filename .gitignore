@@ -8,3 +8,7 @@ __pycache__/
 *.log
 .venv*
 .venv*/
+
+# Editor / assistant session exports
+kimi-export-*.md
+*.session.md
