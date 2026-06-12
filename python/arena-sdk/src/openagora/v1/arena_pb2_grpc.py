@@ -3,8 +3,8 @@
 import grpc
 import warnings
 
-from arena.v1 import arena_pb2 as arena_dot_v1_dot_arena__pb2
-from arena.v1 import trajectory_pb2 as arena_dot_v1_dot_trajectory__pb2
+from openagora.v1 import arena_pb2 as openagora_dot_v1_dot_arena__pb2
+from openagora.v1 import trajectory_pb2 as openagora_dot_v1_dot_trajectory__pb2
 
 GRPC_GENERATED_VERSION = '1.81.0'
 GRPC_VERSION = grpc.__version__
@@ -19,7 +19,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in arena/v1/arena_pb2_grpc.py depends on'
+        + ' but the generated code in openagora/v1/arena_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -36,34 +36,34 @@ class ArenaServiceStub:
             channel: A grpc.Channel.
         """
         self.CreateRollout = channel.unary_unary(
-                '/arena.v1.ArenaService/CreateRollout',
-                request_serializer=arena_dot_v1_dot_arena__pb2.CreateRolloutRequest.SerializeToString,
-                response_deserializer=arena_dot_v1_dot_arena__pb2.CreateRolloutResponse.FromString,
+                '/openagora.v1.ArenaService/CreateRollout',
+                request_serializer=openagora_dot_v1_dot_arena__pb2.CreateRolloutRequest.SerializeToString,
+                response_deserializer=openagora_dot_v1_dot_arena__pb2.CreateRolloutResponse.FromString,
                 _registered_method=True)
         self.GetRollout = channel.unary_unary(
-                '/arena.v1.ArenaService/GetRollout',
-                request_serializer=arena_dot_v1_dot_arena__pb2.GetRolloutRequest.SerializeToString,
-                response_deserializer=arena_dot_v1_dot_arena__pb2.Rollout.FromString,
+                '/openagora.v1.ArenaService/GetRollout',
+                request_serializer=openagora_dot_v1_dot_arena__pb2.GetRolloutRequest.SerializeToString,
+                response_deserializer=openagora_dot_v1_dot_arena__pb2.Rollout.FromString,
                 _registered_method=True)
         self.StopRollout = channel.unary_unary(
-                '/arena.v1.ArenaService/StopRollout',
-                request_serializer=arena_dot_v1_dot_arena__pb2.StopRolloutRequest.SerializeToString,
-                response_deserializer=arena_dot_v1_dot_arena__pb2.StopRolloutResponse.FromString,
+                '/openagora.v1.ArenaService/StopRollout',
+                request_serializer=openagora_dot_v1_dot_arena__pb2.StopRolloutRequest.SerializeToString,
+                response_deserializer=openagora_dot_v1_dot_arena__pb2.StopRolloutResponse.FromString,
                 _registered_method=True)
         self.ListRollouts = channel.unary_unary(
-                '/arena.v1.ArenaService/ListRollouts',
-                request_serializer=arena_dot_v1_dot_arena__pb2.ListRolloutsRequest.SerializeToString,
-                response_deserializer=arena_dot_v1_dot_arena__pb2.ListRolloutsResponse.FromString,
+                '/openagora.v1.ArenaService/ListRollouts',
+                request_serializer=openagora_dot_v1_dot_arena__pb2.ListRolloutsRequest.SerializeToString,
+                response_deserializer=openagora_dot_v1_dot_arena__pb2.ListRolloutsResponse.FromString,
                 _registered_method=True)
         self.StreamTrajectory = channel.unary_stream(
-                '/arena.v1.ArenaService/StreamTrajectory',
-                request_serializer=arena_dot_v1_dot_arena__pb2.StreamTrajectoryRequest.SerializeToString,
-                response_deserializer=arena_dot_v1_dot_trajectory__pb2.TrajectoryStep.FromString,
+                '/openagora.v1.ArenaService/StreamTrajectory',
+                request_serializer=openagora_dot_v1_dot_arena__pb2.StreamTrajectoryRequest.SerializeToString,
+                response_deserializer=openagora_dot_v1_dot_trajectory__pb2.TrajectoryStep.FromString,
                 _registered_method=True)
         self.GetTrajectory = channel.unary_unary(
-                '/arena.v1.ArenaService/GetTrajectory',
-                request_serializer=arena_dot_v1_dot_arena__pb2.GetTrajectoryRequest.SerializeToString,
-                response_deserializer=arena_dot_v1_dot_arena__pb2.Trajectory.FromString,
+                '/openagora.v1.ArenaService/GetTrajectory',
+                request_serializer=openagora_dot_v1_dot_arena__pb2.GetTrajectoryRequest.SerializeToString,
+                response_deserializer=openagora_dot_v1_dot_arena__pb2.Trajectory.FromString,
                 _registered_method=True)
 
 
@@ -111,39 +111,39 @@ def add_ArenaServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'CreateRollout': grpc.unary_unary_rpc_method_handler(
                     servicer.CreateRollout,
-                    request_deserializer=arena_dot_v1_dot_arena__pb2.CreateRolloutRequest.FromString,
-                    response_serializer=arena_dot_v1_dot_arena__pb2.CreateRolloutResponse.SerializeToString,
+                    request_deserializer=openagora_dot_v1_dot_arena__pb2.CreateRolloutRequest.FromString,
+                    response_serializer=openagora_dot_v1_dot_arena__pb2.CreateRolloutResponse.SerializeToString,
             ),
             'GetRollout': grpc.unary_unary_rpc_method_handler(
                     servicer.GetRollout,
-                    request_deserializer=arena_dot_v1_dot_arena__pb2.GetRolloutRequest.FromString,
-                    response_serializer=arena_dot_v1_dot_arena__pb2.Rollout.SerializeToString,
+                    request_deserializer=openagora_dot_v1_dot_arena__pb2.GetRolloutRequest.FromString,
+                    response_serializer=openagora_dot_v1_dot_arena__pb2.Rollout.SerializeToString,
             ),
             'StopRollout': grpc.unary_unary_rpc_method_handler(
                     servicer.StopRollout,
-                    request_deserializer=arena_dot_v1_dot_arena__pb2.StopRolloutRequest.FromString,
-                    response_serializer=arena_dot_v1_dot_arena__pb2.StopRolloutResponse.SerializeToString,
+                    request_deserializer=openagora_dot_v1_dot_arena__pb2.StopRolloutRequest.FromString,
+                    response_serializer=openagora_dot_v1_dot_arena__pb2.StopRolloutResponse.SerializeToString,
             ),
             'ListRollouts': grpc.unary_unary_rpc_method_handler(
                     servicer.ListRollouts,
-                    request_deserializer=arena_dot_v1_dot_arena__pb2.ListRolloutsRequest.FromString,
-                    response_serializer=arena_dot_v1_dot_arena__pb2.ListRolloutsResponse.SerializeToString,
+                    request_deserializer=openagora_dot_v1_dot_arena__pb2.ListRolloutsRequest.FromString,
+                    response_serializer=openagora_dot_v1_dot_arena__pb2.ListRolloutsResponse.SerializeToString,
             ),
             'StreamTrajectory': grpc.unary_stream_rpc_method_handler(
                     servicer.StreamTrajectory,
-                    request_deserializer=arena_dot_v1_dot_arena__pb2.StreamTrajectoryRequest.FromString,
-                    response_serializer=arena_dot_v1_dot_trajectory__pb2.TrajectoryStep.SerializeToString,
+                    request_deserializer=openagora_dot_v1_dot_arena__pb2.StreamTrajectoryRequest.FromString,
+                    response_serializer=openagora_dot_v1_dot_trajectory__pb2.TrajectoryStep.SerializeToString,
             ),
             'GetTrajectory': grpc.unary_unary_rpc_method_handler(
                     servicer.GetTrajectory,
-                    request_deserializer=arena_dot_v1_dot_arena__pb2.GetTrajectoryRequest.FromString,
-                    response_serializer=arena_dot_v1_dot_arena__pb2.Trajectory.SerializeToString,
+                    request_deserializer=openagora_dot_v1_dot_arena__pb2.GetTrajectoryRequest.FromString,
+                    response_serializer=openagora_dot_v1_dot_arena__pb2.Trajectory.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'arena.v1.ArenaService', rpc_method_handlers)
+            'openagora.v1.ArenaService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('arena.v1.ArenaService', rpc_method_handlers)
+    server.add_registered_method_handlers('openagora.v1.ArenaService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
@@ -164,9 +164,9 @@ class ArenaService:
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/arena.v1.ArenaService/CreateRollout',
-            arena_dot_v1_dot_arena__pb2.CreateRolloutRequest.SerializeToString,
-            arena_dot_v1_dot_arena__pb2.CreateRolloutResponse.FromString,
+            '/openagora.v1.ArenaService/CreateRollout',
+            openagora_dot_v1_dot_arena__pb2.CreateRolloutRequest.SerializeToString,
+            openagora_dot_v1_dot_arena__pb2.CreateRolloutResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -191,9 +191,9 @@ class ArenaService:
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/arena.v1.ArenaService/GetRollout',
-            arena_dot_v1_dot_arena__pb2.GetRolloutRequest.SerializeToString,
-            arena_dot_v1_dot_arena__pb2.Rollout.FromString,
+            '/openagora.v1.ArenaService/GetRollout',
+            openagora_dot_v1_dot_arena__pb2.GetRolloutRequest.SerializeToString,
+            openagora_dot_v1_dot_arena__pb2.Rollout.FromString,
             options,
             channel_credentials,
             insecure,
@@ -218,9 +218,9 @@ class ArenaService:
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/arena.v1.ArenaService/StopRollout',
-            arena_dot_v1_dot_arena__pb2.StopRolloutRequest.SerializeToString,
-            arena_dot_v1_dot_arena__pb2.StopRolloutResponse.FromString,
+            '/openagora.v1.ArenaService/StopRollout',
+            openagora_dot_v1_dot_arena__pb2.StopRolloutRequest.SerializeToString,
+            openagora_dot_v1_dot_arena__pb2.StopRolloutResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -245,9 +245,9 @@ class ArenaService:
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/arena.v1.ArenaService/ListRollouts',
-            arena_dot_v1_dot_arena__pb2.ListRolloutsRequest.SerializeToString,
-            arena_dot_v1_dot_arena__pb2.ListRolloutsResponse.FromString,
+            '/openagora.v1.ArenaService/ListRollouts',
+            openagora_dot_v1_dot_arena__pb2.ListRolloutsRequest.SerializeToString,
+            openagora_dot_v1_dot_arena__pb2.ListRolloutsResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -272,9 +272,9 @@ class ArenaService:
         return grpc.experimental.unary_stream(
             request,
             target,
-            '/arena.v1.ArenaService/StreamTrajectory',
-            arena_dot_v1_dot_arena__pb2.StreamTrajectoryRequest.SerializeToString,
-            arena_dot_v1_dot_trajectory__pb2.TrajectoryStep.FromString,
+            '/openagora.v1.ArenaService/StreamTrajectory',
+            openagora_dot_v1_dot_arena__pb2.StreamTrajectoryRequest.SerializeToString,
+            openagora_dot_v1_dot_trajectory__pb2.TrajectoryStep.FromString,
             options,
             channel_credentials,
             insecure,
@@ -299,9 +299,9 @@ class ArenaService:
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/arena.v1.ArenaService/GetTrajectory',
-            arena_dot_v1_dot_arena__pb2.GetTrajectoryRequest.SerializeToString,
-            arena_dot_v1_dot_arena__pb2.Trajectory.FromString,
+            '/openagora.v1.ArenaService/GetTrajectory',
+            openagora_dot_v1_dot_arena__pb2.GetTrajectoryRequest.SerializeToString,
+            openagora_dot_v1_dot_arena__pb2.Trajectory.FromString,
             options,
             channel_credentials,
             insecure,

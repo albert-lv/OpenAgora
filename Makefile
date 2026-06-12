@@ -3,13 +3,13 @@
 proto:
 	cd go && protoc --go_out=. --go_opt=paths=source_relative \
 		--go-grpc_out=. --go-grpc_opt=paths=source_relative \
-		-I ../proto ../proto/arena/v1/*.proto
-	mkdir -p go/proto/arena/v1
-	mv go/arena/v1/*.pb.go go/proto/arena/v1/ || true
-	rm -rf go/arena
-	python -m grpc_tools.protoc \
+		-I ../proto ../proto/openagora/v1/*.proto
+	mkdir -p go/proto/openagora/v1
+	mv go/openagora/v1/*.pb.go go/proto/openagora/v1/ || true
+	rm -rf go/openagora
+	python3 -m grpc_tools.protoc \
 		--python_out=python/arena-sdk/src --grpc_python_out=python/arena-sdk/src \
-		-I proto proto/arena/v1/*.proto
+		-I proto proto/openagora/v1/*.proto
 
 # 编译 Go binary
 .PHONY: build

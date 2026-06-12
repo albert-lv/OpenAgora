@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             v5.29.3
-// source: arena/v1/arena.proto
+// source: openagora/v1/arena.proto
 
 package v1
 
@@ -19,12 +19,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ArenaService_CreateRollout_FullMethodName    = "/arena.v1.ArenaService/CreateRollout"
-	ArenaService_GetRollout_FullMethodName       = "/arena.v1.ArenaService/GetRollout"
-	ArenaService_StopRollout_FullMethodName      = "/arena.v1.ArenaService/StopRollout"
-	ArenaService_ListRollouts_FullMethodName     = "/arena.v1.ArenaService/ListRollouts"
-	ArenaService_StreamTrajectory_FullMethodName = "/arena.v1.ArenaService/StreamTrajectory"
-	ArenaService_GetTrajectory_FullMethodName    = "/arena.v1.ArenaService/GetTrajectory"
+	ArenaService_CreateRollout_FullMethodName    = "/openagora.v1.ArenaService/CreateRollout"
+	ArenaService_GetRollout_FullMethodName       = "/openagora.v1.ArenaService/GetRollout"
+	ArenaService_StopRollout_FullMethodName      = "/openagora.v1.ArenaService/StopRollout"
+	ArenaService_ListRollouts_FullMethodName     = "/openagora.v1.ArenaService/ListRollouts"
+	ArenaService_StreamTrajectory_FullMethodName = "/openagora.v1.ArenaService/StreamTrajectory"
+	ArenaService_GetTrajectory_FullMethodName    = "/openagora.v1.ArenaService/GetTrajectory"
 )
 
 // ArenaServiceClient is the client API for ArenaService service.
@@ -280,7 +280,7 @@ func _ArenaService_GetTrajectory_Handler(srv interface{}, ctx context.Context, d
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var ArenaService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "arena.v1.ArenaService",
+	ServiceName: "openagora.v1.ArenaService",
 	HandlerType: (*ArenaServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -311,5 +311,5 @@ var ArenaService_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "arena/v1/arena.proto",
+	Metadata: "openagora/v1/arena.proto",
 }
