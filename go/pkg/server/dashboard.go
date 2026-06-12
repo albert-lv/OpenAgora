@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -24,6 +25,7 @@ func (s *ArenaServer) DashboardHandler() http.Handler {
 	mux.HandleFunc("/api/rollouts/", s.handleRolloutDetail)
 	mux.HandleFunc("/api/stats/overview", s.handleStatsOverview)
 	mux.HandleFunc("/api/stats/verify", s.handleStatsVerify)
+	mux.HandleFunc("/api/stats/tokens", s.handleStatsTokens)
 
 	// Static files and SPA fallback.
 	mux.Handle("/static/", http.FileServer(http.FS(staticFiles)))
@@ -185,7 +187,6 @@ func (s *ArenaServer) handleStatsOverview(w http.ResponseWriter, r *http.Request
 	total := len(s.rollouts)
 	var active, success, failed int
 	var totalReward float64
-	var totalTokens int64
 
 	for _, ro := range s.rollouts {
 		switch ro.Status {
@@ -204,26 +205,7 @@ func (s *ArenaServer) handleStatsOverview(w http.ResponseWriter, r *http.Request
 		avgReward = totalReward / float64(total)
 	}
 
-	// Count trajectory steps and tokens.
-	for _, ro := range s.rollouts {
-		var buf bytes.Buffer
-		if err := s.trajBackend.Read(r.Context(), ro.ID, &buf); err != nil {
-			continue
-		}
-		for _, line := range strings.Split(buf.String(), "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
-			var step trajectory.Step
-			if err := json.Unmarshal([]byte(line), &step); err != nil {
-				continue
-			}
-			if step.Response != nil && step.Response.Usage != nil {
-				totalTokens += int64(step.Response.Usage.PromptTokens + step.Response.Usage.CompletionTokens)
-			}
-		}
-	}
+	tokenStats := s.collectTokenStats()
 
 	resp := map[string]any{
 		"total_rollouts":  total,
@@ -231,7 +213,7 @@ func (s *ArenaServer) handleStatsOverview(w http.ResponseWriter, r *http.Request
 		"success_count":   success,
 		"failed_count":    failed,
 		"avg_reward":      avgReward,
-		"total_tokens":    totalTokens,
+		"total_tokens":    tokenStats.Total,
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
@@ -272,4 +254,89 @@ func (s *ArenaServer) handleStatsVerify(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// tokenStats holds aggregated token usage.
+type tokenStats struct {
+	TotalPrompt     int64            `json:"total_prompt_tokens"`
+	TotalCompletion int64            `json:"total_completion_tokens"`
+	Total           int64            `json:"total_tokens"`
+	ByRollout       []rolloutTokens  `json:"by_rollout"`
+	Timeline        []tokenDataPoint `json:"timeline"`
+}
+
+type rolloutTokens struct {
+	RolloutID        string `json:"rollout_id"`
+	PromptTokens     int64  `json:"prompt_tokens"`
+	CompletionTokens int64  `json:"completion_tokens"`
+	TotalTokens      int64  `json:"total_tokens"`
+	Steps            int    `json:"steps"`
+}
+
+type tokenDataPoint struct {
+	Timestamp        string `json:"timestamp"`
+	PromptTokens     int64  `json:"prompt_tokens"`
+	CompletionTokens int64  `json:"completion_tokens"`
+}
+
+// collectTokenStats aggregates token usage across all rollouts.
+// Caller must hold at least a read lock on s.mu.
+func (s *ArenaServer) collectTokenStats() tokenStats {
+	stats := tokenStats{
+		ByRollout: make([]rolloutTokens, 0, len(s.rollouts)),
+		Timeline:  make([]tokenDataPoint, 0),
+	}
+
+	for _, ro := range s.rollouts {
+		var buf bytes.Buffer
+		if err := s.trajBackend.Read(context.Background(), ro.ID, &buf); err != nil {
+			continue
+		}
+
+		var prompt, completion int64
+		var steps int
+		for _, line := range strings.Split(buf.String(), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			var step trajectory.Step
+			if err := json.Unmarshal([]byte(line), &step); err != nil {
+				continue
+			}
+			steps++
+			if step.Response != nil && step.Response.Usage != nil {
+				prompt += int64(step.Response.Usage.PromptTokens)
+				completion += int64(step.Response.Usage.CompletionTokens)
+				stats.Timeline = append(stats.Timeline, tokenDataPoint{
+					Timestamp:        step.Timestamp.Format("15:04:05"),
+					PromptTokens:     int64(step.Response.Usage.PromptTokens),
+					CompletionTokens: int64(step.Response.Usage.CompletionTokens),
+				})
+			}
+		}
+
+		total := prompt + completion
+		stats.TotalPrompt += prompt
+		stats.TotalCompletion += completion
+		stats.Total += total
+		stats.ByRollout = append(stats.ByRollout, rolloutTokens{
+			RolloutID:        ro.ID,
+			PromptTokens:     prompt,
+			CompletionTokens: completion,
+			TotalTokens:      total,
+			Steps:            steps,
+		})
+	}
+
+	return stats
+}
+
+func (s *ArenaServer) handleStatsTokens(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	stats := s.collectTokenStats()
+	s.mu.RUnlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(stats)
 }

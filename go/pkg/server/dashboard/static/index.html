@@ -60,6 +60,7 @@
       <nav class="flex space-x-8" id="tabs">
         <button class="tab-btn active" data-tab="rollouts">Rollouts</button>
         <button class="tab-btn" data-tab="verify">Verify Stats</button>
+        <button class="tab-btn" data-tab="tokens">Token Stats</button>
         <button class="tab-btn" data-tab="proxy">Proxy Data</button>
       </nav>
     </div>
@@ -118,6 +119,47 @@
       <div class="card">
         <h3 class="text-lg font-semibold mb-4">Reward Distribution</h3>
         <canvas id="reward-chart" height="80"></canvas>
+      </div>
+    </div>
+
+    <!-- Token Stats Tab -->
+    <div id="tab-tokens" class="p-6 tab-content hidden">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+        <div class="card bg-blue-50">
+          <div class="text-sm text-blue-600">Total Tokens</div>
+          <div class="text-2xl font-bold text-blue-800" id="tokens-total">--</div>
+        </div>
+        <div class="card bg-green-50">
+          <div class="text-sm text-green-600">Prompt Tokens</div>
+          <div class="text-2xl font-bold text-green-800" id="tokens-prompt">--</div>
+        </div>
+        <div class="card bg-purple-50">
+          <div class="text-sm text-purple-600">Completion Tokens</div>
+          <div class="text-2xl font-bold text-purple-800" id="tokens-completion">--</div>
+        </div>
+      </div>
+      <div class="card mb-6">
+        <h3 class="text-lg font-semibold mb-4">Token Usage by Rollout</h3>
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rollout ID</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Steps</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Prompt</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Completion</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+              </tr>
+            </thead>
+            <tbody id="tokens-table" class="bg-white divide-y divide-gray-200">
+              <tr><td colspan="5" class="px-4 py-8 text-center text-gray-500">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <h3 class="text-lg font-semibold mb-4">Token Timeline</h3>
+        <canvas id="token-timeline-chart" height="80"></canvas>
       </div>
     </div>
 
@@ -186,6 +228,7 @@
 const API_BASE = '';
 let rolloutsData = [];
 let rewardChart = null;
+let tokenTimelineChart = null;
 
 // Tab switching
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -195,6 +238,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.classList.add('active');
     document.getElementById('tab-' + btn.dataset.tab).classList.remove('hidden');
     if (btn.dataset.tab === 'verify') loadVerifyStats();
+    if (btn.dataset.tab === 'tokens') loadTokenStats();
   });
 });
 
@@ -355,6 +399,54 @@ function closeLogsModal() {
   currentLogsRolloutId = null;
 }
 
+async function loadTokenStats() {
+  const stats = await fetchJSON(API_BASE + '/api/stats/tokens');
+  if (!stats) return;
+
+  document.getElementById('tokens-total').textContent = (stats.total_tokens || 0).toLocaleString();
+  document.getElementById('tokens-prompt').textContent = (stats.total_prompt_tokens || 0).toLocaleString();
+  document.getElementById('tokens-completion').textContent = (stats.total_completion_tokens || 0).toLocaleString();
+
+  const tbody = document.getElementById('tokens-table');
+  const byRollout = stats.by_rollout || [];
+  if (byRollout.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-gray-500">No token data</td></tr>';
+  } else {
+    tbody.innerHTML = byRollout.map(r => `
+      <tr class="hover:bg-gray-50">
+        <td class="px-4 py-3 font-mono text-xs text-gray-600">${r.rollout_id.slice(0, 8)}...</td>
+        <td class="px-4 py-3 text-sm">${r.steps}</td>
+        <td class="px-4 py-3 text-sm">${r.prompt_tokens.toLocaleString()}</td>
+        <td class="px-4 py-3 text-sm">${r.completion_tokens.toLocaleString()}</td>
+        <td class="px-4 py-3 text-sm font-medium">${r.total_tokens.toLocaleString()}</td>
+      </tr>
+    `).join('');
+  }
+
+  const timeline = stats.timeline || [];
+  const labels = timeline.slice(-30).map(t => t.timestamp);
+  const promptData = timeline.slice(-30).map(t => t.prompt_tokens || 0);
+  const completionData = timeline.slice(-30).map(t => t.completion_tokens || 0);
+
+  const ctx = document.getElementById('token-timeline-chart').getContext('2d');
+  if (tokenTimelineChart) tokenTimelineChart.destroy();
+  tokenTimelineChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        { label: 'Prompt', data: promptData, borderColor: '#3b82f6', fill: false, tension: 0.3 },
+        { label: 'Completion', data: completionData, borderColor: '#10b981', fill: false, tension: 0.3 }
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: 'bottom' } },
+      scales: { y: { beginAtZero: true } }
+    }
+  });
+}
+
 async function loadVerifyStats() {
   const stats = await fetchJSON(API_BASE + '/api/stats/verify');
   if (!stats) return;
@@ -396,6 +488,10 @@ async function loadVerifyStats() {
 setInterval(() => {
   loadOverview();
   loadRollouts();
+  const tokensTab = document.getElementById('tab-tokens');
+  if (tokensTab && !tokensTab.classList.contains('hidden')) {
+    loadTokenStats();
+  }
 }, 5000);
 
 // Initial load
