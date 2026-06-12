@@ -23,7 +23,7 @@ if HF_PROXY:
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-0.5B-Instruct")
+MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen3.5-0.8B")
 
 def main():
     print(f"Downloading model: {MODEL_NAME}")

@@ -3,7 +3,7 @@
 Minimal CPU PPO training demo with Arena Agent Loop.
 
 This script demonstrates a complete RL training loop:
-1. Load a tiny model (default: Qwen/Qwen2.5-0.5B-Instruct)
+1. Load a tiny model (default: Qwen/Qwen3.5-0.8B)
 2. For each training iteration, run Arena rollouts
 3. Post-process outputs into tensors
 4. Compute old logprobs and value estimates
@@ -63,7 +63,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-0.5B-Instruct")
+MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen3.5-0.8B")
 DATASET_PATH = os.environ.get("DATASET_PATH", "/app/data/demo_dataset.parquet")
 ARENA_ENDPOINT = os.environ.get("ARENA_ENDPOINT", "host.docker.internal:9090")
 ARENA_AGENT_IMAGE = os.environ.get("ARENA_AGENT_IMAGE", "arena-agent-minimal:latest")

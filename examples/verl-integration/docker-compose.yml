@@ -86,7 +86,7 @@ services:
       dockerfile: docker/Dockerfile.cpu-trainer
     container_name: arena-trainer
     environment:
-      - MODEL_NAME=${MODEL_NAME:-Qwen/Qwen2.5-0.5B-Instruct}
+      - MODEL_NAME=${MODEL_NAME:-Qwen/Qwen3.5-0.8B}
       - DATASET_PATH=/app/data/demo_dataset.parquet
       - ARENA_ENDPOINT=arena-server:9090
       - ARENA_AGENT_IMAGE=arena-demo-agent:latest
