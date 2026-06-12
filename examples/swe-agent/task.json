@@ -4,6 +4,6 @@
   "repository": "https://github.com/django/django",
   "commit": "abc123def456",
   "test_command": "python -m pytest tests/db/models/test_query.py -k annotate_subquery",
-  "sandbox_image": "arena-swe-agent:latest",
+  "sandbox_image": "openagora-swe-agent:latest",
   "llm_backend": "http://localhost:8000/v1"
 }

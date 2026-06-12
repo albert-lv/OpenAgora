@@ -202,7 +202,7 @@ def run_mock_demo(n_steps=100):
     print(f"Final reward: {metrics['reward']:.3f}")
     print("\nMock demo completed successfully!")
     print("\nTo run with REAL services, start:")
-    print(" 1. Arena Server: ./bin/arena-server --sandbox=docker")
+    print(" 1. Arena Server: ./bin/openagora-server --sandbox=docker")
     print(" 2. vLLM: vllm serve Qwen/Qwen3.5-0.8B --enable-auto-tool-choice")
     print(" 3. Then run: python demo.py --mode real")
     return 0
@@ -215,9 +215,9 @@ def run_real_demo(arena_endpoint: str, repo_path: str, issue: str, llm_backend: 
     print("=" * 60)
     
     try:
-        from arena_sdk import ArenaClient
+        from openagora_sdk import ArenaClient
     except ImportError:
-        print("ERROR: arena_sdk not installed. Install with: pip install -e python/arena-sdk")
+        print("ERROR: openagora_sdk not installed. Install with: pip install -e python/openagora-sdk")
         return 1
     
     client = ArenaClient(arena_endpoint)
@@ -255,7 +255,7 @@ def run_real_demo(arena_endpoint: str, repo_path: str, issue: str, llm_backend: 
     print(f"Creating rollout: {issue}")
     rollout = client.create_rollout(
         task_id=f"swe-demo-{issue[:20]}",
-        image="arena-swe-agent:latest",
+        image="openagora-swe-agent:latest",
         llm_backend=llm_backend,
         sampling={"temperature": 0.3, "top_p": 0.9, "max_tokens": 1024},
         verify={"command": "cd /testbed && pytest tests/ -v"},

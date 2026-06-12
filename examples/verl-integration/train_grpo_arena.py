@@ -7,7 +7,7 @@ veRL discovers agent loops by importing modules that decorate subclasses of
 module that performs the registration has never been imported in the trainer
 process.
 
-This wrapper imports ``arena_verl`` (which triggers the registration of
+This wrapper imports ``openagora_verl`` (which triggers the registration of
 ``ArenaAgentLoop`` as ``"arena_agent"``) and then delegates to veRL's
 ``main_ppo`` entry point. All command-line arguments and environment variables
 are forwarded unchanged.
@@ -19,20 +19,20 @@ import os
 import sys
 
 
-def _add_arena_verl_to_path() -> None:
-    """Insert the arena-verl source tree into sys.path if it exists locally."""
+def _add_openagora_verl_to_path() -> None:
+    """Insert the openagora-verl source tree into sys.path if it exists locally."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    arena_verl_src = os.path.normpath(
-        os.path.join(script_dir, "../../python/arena-verl/src")
+    openagora_verl_src = os.path.normpath(
+        os.path.join(script_dir, "../../python/openagora-verl/src")
     )
-    if os.path.isdir(arena_verl_src) and arena_verl_src not in sys.path:
-        sys.path.insert(0, arena_verl_src)
+    if os.path.isdir(openagora_verl_src) and openagora_verl_src not in sys.path:
+        sys.path.insert(0, openagora_verl_src)
 
 
-_add_arena_verl_to_path()
+_add_openagora_verl_to_path()
 
 # Importing this package registers ArenaAgentLoop with veRL's AgentLoop registry.
-import arena_verl  # noqa: F401
+import openagora_verl  # noqa: F401
 
 
 def main() -> None:

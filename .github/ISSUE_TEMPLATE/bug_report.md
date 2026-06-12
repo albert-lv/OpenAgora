@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Create a report to help us improve Agent Arena
+about: Create a report to help us improve OpenAgora
 title: '[Bug] '
 labels: bug
 assignees: ''

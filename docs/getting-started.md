@@ -1,4 +1,4 @@
-# Getting Started with Agent Arena
+# Getting Started with OpenAgora
 
 Welcome! This guide will walk you through building Arena from source, running your first rollout, and connecting your own agent.
 
@@ -47,26 +47,26 @@ docker --version
 ## Clone and Build
 
 ```bash
-git clone https://github.com/albert-lv/agent-arena.git
-cd agent-arena
+git clone https://github.com/albert-lv/OpenAgora.git
+cd OpenAgora
 make build
 ```
 
-This compiles the Go server and places the binary at `./bin/arena-server`.
+This compiles the Go server and places the binary at `./bin/openagora-server`.
 
 ---
 
 ## Start the Server
 
 ```bash
-./bin/arena-server
+./bin/openagora-server
 ```
 
 By default the server listens on `:9090`. You should see log output indicating that the gRPC server and sandbox provider are ready.
 
 > **Note:** The quickstart uses the Docker sandbox provider by default. Make sure Docker is running before proceeding. If you do not have Docker, you can start the server with a mock sandbox instead:
 > ```bash
-> ./bin/arena-server --sandbox=mock
+> ./bin/openagora-server --sandbox=mock
 > ```
 > The mock provider does not create real containers, but the rest of the flow (proxy, trajectory, verification) works normally.
 
@@ -91,7 +91,7 @@ cd examples/quickstart
 
 This script will:
 
-1. Ensure the `arena-sdk` Python package is installed
+1. Ensure the `openagora-sdk` Python package is installed
 2. Create a rollout via the Arena gRPC API
 3. Start a Docker sandbox running the minimal agent
 4. Capture LLM calls through the Arena proxy
@@ -127,10 +127,10 @@ ollama run qwen3.5:0.8b
 Build and start the optional vLLM image:
 
 ```bash
-docker build -f docker/Dockerfile.vllm -t arena-vllm:latest .
+docker build -f docker/Dockerfile.vllm -t openagora-vllm:latest .
 docker run --rm --gpus all -p 8000:8000 \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
-  arena-vllm:latest \
+  openagora-vllm:latest \
   --model Qwen/Qwen3.5-0.8B --served-model-name qwen3.5:0.8b
 ```
 
@@ -154,7 +154,7 @@ SGLang exposes an OpenAI-compatible server as well. Replace the vLLM image with 
 The Python SDK is used by quickstart scripts, verification runners, and trainer adapters.
 
 ```bash
-cd python/arena-sdk
+cd python/openagora-sdk
 uv sync --extra dev
 ```
 
@@ -164,7 +164,7 @@ To install it in editable mode for local development:
 pip install -e .
 ```
 
-Repeat the same steps for `python/arena-verify` and `python/arena-verl` if you plan to work on those components.
+Repeat the same steps for `python/openagora-verify` and `python/openagora-verl` if you plan to work on those components.
 
 ---
 
@@ -202,9 +202,9 @@ make sdk-test
 Individual Python packages can be tested with:
 
 ```bash
-cd python/arena-sdk && uv run pytest
-cd python/arena-verify && uv run pytest
-cd python/arena-verl && uv run pytest
+cd python/openagora-sdk && uv run pytest
+cd python/openagora-verify && uv run pytest
+cd python/openagora-verl && uv run pytest
 ```
 
 ---
@@ -232,7 +232,7 @@ The quickstart requires Docker. If you cannot run Docker locally, you can still 
 
 ### `uv sync` fails
 
-Make sure you have [uv](https://docs.astral.sh/uv/getting-started/installation/) installed and that you are inside the correct Python package directory (`python/arena-sdk`, `python/arena-verify`, or `python/arena-verl`).
+Make sure you have [uv](https://docs.astral.sh/uv/getting-started/installation/) installed and that you are inside the correct Python package directory (`python/openagora-sdk`, `python/openagora-verify`, or `python/openagora-verl`).
 
 ### Port 9090 is already in use
 
@@ -240,4 +240,4 @@ Either stop the other service on port 9090, or run the server with a different p
 
 ---
 
-Need more help? Open a [GitHub Discussion](https://github.com/albert-lv/agent-arena/discussions) or [issue](https://github.com/albert-lv/agent-arena/issues).
+Need more help? Open a [GitHub Discussion](https://github.com/albert-lv/OpenAgora/discussions) or [issue](https://github.com/albert-lv/OpenAgora/issues).

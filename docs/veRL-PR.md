@@ -109,10 +109,10 @@ python examples/arena_grpo/train_grpo_arena.py \
 
 | OpenAgora path | Proposed upstream path | Note |
 |----------------|------------------------|------|
-| `python/arena-verl/src/arena_verl/agent_loop.py` | `verl/agent_loop/arena_agent_loop.py` | Core integration |
-| `python/arena-verl/src/arena_verl/rollout.py` | `verl/workers/rollout/arena_rollout.py` | Optional lower-level adapter |
-| `python/arena-verl/src/arena_verl/rollout_provider.py` | `verl/workers/rollout/arena_rollout_provider.py` | Provider glue |
-| `python/arena-sdk/src/arena_sdk/client.py` | `verl/utils/arena_client.py` or keep external | gRPC client |
+| `python/openagora-verl/src/openagora_verl/agent_loop.py` | `verl/agent_loop/arena_agent_loop.py` | Core integration |
+| `python/openagora-verl/src/openagora_verl/rollout.py` | `verl/workers/rollout/arena_rollout.py` | Optional lower-level adapter |
+| `python/openagora-verl/src/openagora_verl/rollout_provider.py` | `verl/workers/rollout/arena_rollout_provider.py` | Provider glue |
+| `python/openagora-sdk/src/openagora_sdk/client.py` | `verl/utils/arena_client.py` or keep external | gRPC client |
 | `examples/verl-integration/train_grpo_arena.py` | `examples/arena_grpo/train_grpo_arena.py` | Launcher wrapper |
 | `examples/verl-integration/train_grpo_arena.sh` | `examples/arena_grpo/train_grpo_arena.sh` | Shell launcher |
 | `examples/verl-integration/README.md` | `docs/advance/agent_loop.rst` (adapted) | Documentation |

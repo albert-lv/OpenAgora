@@ -43,7 +43,7 @@ def main():
     cache_dir = os.environ.get("HF_HOME", os.path.expanduser("~/.cache/huggingface"))
     print(f"\nModel cached at: {cache_dir}")
     print(f"\nRun training with:")
-    print(f"  docker run -v {cache_dir}:/app/.cache/huggingface arena-cpu-trainer:latest")
+    print(f"  docker run -v {cache_dir}:/app/.cache/huggingface openagora-cpu-trainer:latest")
 
 
 if __name__ == "__main__":

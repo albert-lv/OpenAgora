@@ -26,7 +26,7 @@ services:
     build:
       context: ../..
       dockerfile: docker/Dockerfile.vllm
-    container_name: arena-vllm
+    container_name: openagora-vllm
     command: >
       --model ${VLLM_MODEL:-Qwen/Qwen3.5-0.8B}
       --served-model-name ${VLLM_SERVED_MODEL_NAME:-qwen3.5:0.8b}
@@ -46,7 +46,7 @@ services:
       retries: 20
       start_period: 60s
     networks:
-      - arena-net
+      - openagora-net
     deploy:
       resources:
         reservations:
@@ -58,11 +58,11 @@ services:
   # ------------------------------------------------------------------
   # Arena Server — manages sandbox lifecycle, proxy, trajectory
   # ------------------------------------------------------------------
-  arena-server:
+  openagora-server:
     build:
       context: ../..
       dockerfile: docker/Dockerfile.server
-    container_name: arena-server
+    container_name: openagora-server
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
@@ -74,17 +74,17 @@ services:
       vllm:
         condition: service_started
     networks:
-      - arena-net
+      - openagora-net
 
   # ------------------------------------------------------------------
-  # Build agent image locally so arena-server can spawn it via host docker
+  # Build agent image locally so openagora-server can spawn it via host docker
   # ------------------------------------------------------------------
   agent-builder:
     build:
       context: ../..
       dockerfile: docker/Dockerfile.demo-agent
-    image: arena-demo-agent:latest
-    container_name: arena-agent-builder
+    image: openagora-demo-agent:latest
+    container_name: openagora-agent-builder
     entrypoint: ["sh", "-c", "echo 'Agent image built'"]
 
   # ------------------------------------------------------------------
@@ -94,12 +94,12 @@ services:
     build:
       context: ../..
       dockerfile: docker/Dockerfile.cpu-trainer
-    container_name: arena-trainer
+    container_name: openagora-trainer
     environment:
       - MODEL_NAME=${VLLM_MODEL:-Qwen/Qwen3.5-0.8B}
       - DATASET_PATH=/app/data/demo_dataset.parquet
-      - ARENA_ENDPOINT=arena-server:9090
-      - ARENA_AGENT_IMAGE=arena-demo-agent:latest
+      - ARENA_ENDPOINT=openagora-server:9090
+      - ARENA_AGENT_IMAGE=openagora-demo-agent:latest
       - ARENA_LLM_BACKEND=http://vllm:8000/v1
       - ARENA_VERIFY_COMMAND=cd /sandbox && python -c "from solution import add; assert add(2,3)==5; print('PASS')"
       - HF_HOME=/app/.cache/huggingface
@@ -111,12 +111,12 @@ services:
     depends_on:
       vllm:
         condition: service_healthy
-      arena-server:
+      openagora-server:
         condition: service_started
       agent-builder:
         condition: service_completed_successfully
     networks:
-      - arena-net
+      - openagora-net
     deploy:
       resources:
         limits:
@@ -127,5 +127,5 @@ volumes:
   huggingface-cache:
 
 networks:
-  arena-net:
+  openagora-net:
     driver: bridge

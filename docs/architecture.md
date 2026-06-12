@@ -77,5 +77,5 @@ Structured, append-only storage for RL training.
 |----------------|-----|
 | New Sandbox Provider | Implement `sandbox.Provider` interface |
 | New Trajectory Backend | Implement `trajectory.Backend` interface |
-| New Verification Plugin | Python package in `arena-verify/` |
-| New Trainer Adapter | Python package following `arena-verl` pattern |
+| New Verification Plugin | Python package in `openagora-verify/` |
+| New Trainer Adapter | Python package following `openagora-verl` pattern |

@@ -15,8 +15,8 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python/arena-verl/src"))
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python/arena-sdk/src"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python/openagora-verl/src"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python/openagora-sdk/src"))
 
 # Mock veRL types if not installed.
 try:
@@ -121,9 +121,9 @@ def mock_postprocess(outputs: list[AgentLoopOutput], prompt_length: int = 128, r
 
 
 async def main():
-    import arena_verl.agent_loop as al_module
+    import openagora_verl.agent_loop as al_module
     al_module._VERL_AVAILABLE = True  # bypass check for mock
-    from arena_verl.agent_loop import ArenaAgentLoop
+    from openagora_verl.agent_loop import ArenaAgentLoop
 
     print("=" * 60)
     print("Mock veRL AgentLoopManager + ArenaAgentLoop")
@@ -148,11 +148,11 @@ async def main():
     loop._processor = None
     loop._prompt_length = 128
     loop._response_length = 128
-    loop._agent_image = "arena-demo-agent:latest"
+    loop._agent_image = "openagora-demo-agent:latest"
     loop._llm_backend = "http://localhost:11434/v1"
     loop._verify_command = "cd /sandbox && python -c \"from solution import add; assert add(2,3)==5; print('PASS')\""
     loop._timeout_seconds = 120
-    from arena_sdk.client import ArenaClient
+    from openagora_sdk.client import ArenaClient
     loop._arena = ArenaClient("localhost:9090")
 
     outputs = []

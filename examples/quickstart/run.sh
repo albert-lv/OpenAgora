@@ -6,7 +6,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ARENA_ENDPOINT="${ARENA_ENDPOINT:-localhost:9090}"
 TASK_FILE="${TASK_FILE:-$SCRIPT_DIR/task.json}"
-SDK_DIR="$SCRIPT_DIR/../../python/arena-sdk"
+SDK_DIR="$SCRIPT_DIR/../../python/openagora-sdk"
 
 # Detect project venv if present
 if [ -f "$SCRIPT_DIR/../../.venv/bin/python" ]; then
@@ -17,9 +17,9 @@ else
     PYTHON="python3"
 fi
 
-# Ensure arena-sdk is available
-if ! "$PYTHON" -c "import arena_sdk" 2>/dev/null; then
-    echo "Installing arena-sdk..."
+# Ensure openagora-sdk is available
+if ! "$PYTHON" -c "import openagora_sdk" 2>/dev/null; then
+    echo "Installing openagora-sdk..."
     if command -v uv &>/dev/null; then
         # Prefer uv if the project uses it
         uv pip install -e "$SDK_DIR"

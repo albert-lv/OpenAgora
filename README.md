@@ -1,7 +1,7 @@
-# Agent Arena
+# OpenAgora
 
-[![Go CI](https://github.com/albert-lv/agent-arena/actions/workflows/go.yml/badge.svg)](https://github.com/albert-lv/agent-arena/actions/workflows/go.yml)
-[![Python CI](https://github.com/albert-lv/agent-arena/actions/workflows/python.yml/badge.svg)](https://github.com/albert-lv/agent-arena/actions/workflows/python.yml)
+[![Go CI](https://github.com/albert-lv/OpenAgora/actions/workflows/go.yml/badge.svg)](https://github.com/albert-lv/OpenAgora/actions/workflows/go.yml)
+[![Python CI](https://github.com/albert-lv/OpenAgora/actions/workflows/python.yml/badge.svg)](https://github.com/albert-lv/OpenAgora/actions/workflows/python.yml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](https://go.dev/)
 [![Python Version](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python)](https://www.python.org/)
@@ -50,21 +50,21 @@ Get your first rollout running in under 5 minutes.
 ### 1. Clone and Build
 
 ```bash
-git clone https://github.com/albert-lv/agent-arena.git
-cd agent-arena
+git clone https://github.com/albert-lv/OpenAgora.git
+cd OpenAgora
 make build
 ```
 
 ### 2. Start the Arena Server
 
 ```bash
-./bin/arena-server
+./bin/openagora-server
 # Server listening on :9090
 ```
 
 > **Note:** The quickstart uses the Docker sandbox provider by default. Make sure Docker is installed and running before proceeding. If you do not have Docker, you can start the server with a mock sandbox instead:
 > ```bash
-> ./bin/arena-server --sandbox=mock
+> ./bin/openagora-server --sandbox=mock
 > ```
 > The mock provider does not create real containers, but the rest of the flow (proxy, trajectory, verification) works normally.
 
@@ -100,15 +100,15 @@ For more details, check out [examples/quickstart/README.md](examples/quickstart/
 ## Project Structure
 
 ```
-agent-arena/
+OpenAgora/
 ├── go/                      # Go core (server, proxy, sandbox orchestration)
-│   ├── cmd/                 # Binaries (arena-server, demo)
+│   ├── cmd/                 # Binaries (openagora-server, demo)
 │   └── pkg/                 # Reusable packages
 ├── proto/                   # Protobuf / gRPC schemas
 ├── python/                  # Python ecosystem
-│   ├── arena-sdk/           # Python client for Arena
-│   ├── arena-verify/        # Verification plugins
-│   └── arena-verl/          # veRL trainer adapter
+│   ├── openagora-sdk/           # Python client for Arena
+│   ├── openagora-verify/        # Verification plugins
+│   └── openagora-verl/          # veRL trainer adapter
 ├── docker/                  # Docker images
 ├── docs/                    # Documentation
 ├── examples/                # Quickstart and trainer integrations
@@ -124,21 +124,21 @@ agent-arena/
 
 ```bash
 make build
-# Output: ./bin/arena-server
+# Output: ./bin/openagora-server
 ```
 
 ### Python SDK
 
 ```bash
-cd python/arena-sdk
+cd python/openagora-sdk
 uv sync
 ```
 
 ### Docker Images
 
 ```bash
-make docker-server    # arena-server:latest
-make docker-agent     # arena-agent-minimal:latest
+make docker-server    # openagora-server:latest
+make docker-agent     # openagora-agent-minimal:latest
 ```
 
 ---
@@ -158,13 +158,13 @@ That is it — language-agnostic and framework-agnostic.
 ### Python Client
 
 ```python
-from arena_sdk.client import ArenaClient
+from openagora_sdk.client import ArenaClient
 
 client = ArenaClient("localhost:9090")
 
 rollout_id = client.create_rollout(
     task_id="my-task",
-    image="arena-agent-minimal:latest",
+    image="openagora-agent-minimal:latest",
     llm_backend="http://localhost:8000/v1",
 )
 
@@ -187,7 +187,7 @@ We are building Arena in public. Here is what is coming next:
 - [ ] Distributed rollout workers
 - [ ] Observability dashboards
 
-Have an idea? Open a [discussion](https://github.com/albert-lv/agent-arena/discussions) or [issue](https://github.com/albert-lv/agent-arena/issues).
+Have an idea? Open a [discussion](https://github.com/albert-lv/OpenAgora/discussions) or [issue](https://github.com/albert-lv/OpenAgora/issues).
 
 ---
 
@@ -197,9 +197,9 @@ We love contributions! Please read our [Contributing Guide](CONTRIBUTING.md) to 
 
 A few quick ways to help:
 
-- **Report bugs** — [open an issue](https://github.com/albert-lv/agent-arena/issues/new?template=bug_report.md)
-- **Request features** — [open an issue](https://github.com/albert-lv/agent-arena/issues/new?template=feature_request.md)
-- **Submit improvements** — [open a pull request](https://github.com/albert-lv/agent-arena/pulls)
+- **Report bugs** — [open an issue](https://github.com/albert-lv/OpenAgora/issues/new?template=bug_report.md)
+- **Request features** — [open an issue](https://github.com/albert-lv/OpenAgora/issues/new?template=feature_request.md)
+- **Submit improvements** — [open a pull request](https://github.com/albert-lv/OpenAgora/pulls)
 - **Spread the word** — star the repo and share with others
 
 Please note that this project is released with a [Contributor Code of Conduct](CODE_OF_CONDUCT.md). By participating, you agree to abide by its terms.
@@ -208,15 +208,15 @@ Please note that this project is released with a [Contributor Code of Conduct](C
 
 ## Community
 
-- 💬 [GitHub Discussions](https://github.com/albert-lv/agent-arena/discussions) — ask questions, share ideas
-- 🐛 [GitHub Issues](https://github.com/albert-lv/agent-arena/issues) — bug reports and feature requests
+- 💬 [GitHub Discussions](https://github.com/albert-lv/OpenAgora/discussions) — ask questions, share ideas
+- 🐛 [GitHub Issues](https://github.com/albert-lv/OpenAgora/issues) — bug reports and feature requests
 - 📧 For security issues, please email the maintainers directly instead of opening a public issue
 
 ---
 
 ## License
 
-Agent Arena is licensed under the [Apache License 2.0](LICENSE).
+OpenAgora is licensed under the [Apache License 2.0](LICENSE).
 
 ---
 

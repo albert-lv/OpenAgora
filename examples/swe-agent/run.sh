@@ -9,8 +9,8 @@ ARENA_ENDPOINT="${ARENA_ENDPOINT:-localhost:9090}"
 TASK_FILE="${TASK_FILE:-$SCRIPT_DIR/task.json}"
 
 # Build the SWE-agent Docker image if needed
-echo "Building arena-swe-agent image..."
-docker build -t arena-swe-agent:latest -f "$SCRIPT_DIR/../../docker/Dockerfile.swe-agent" "$SCRIPT_DIR/../.."
+echo "Building openagora-swe-agent image..."
+docker build -t openagora-swe-agent:latest -f "$SCRIPT_DIR/../../docker/Dockerfile.swe-agent" "$SCRIPT_DIR/../.."
 
 echo "Creating SWE-agent rollout via Arena ($ARENA_ENDPOINT)..."
 python3 "$SCRIPT_DIR/run_rollout.py" \

@@ -36,7 +36,7 @@ def main():
                     },
                 ],
                 "extra_info": json.dumps(
-                    {"arena_verify": "cd /sandbox && python -c \"from solution import add; assert add(2,3)==5; print('PASS')\""}
+                    {"openagora_verify": "cd /sandbox && python -c \"from solution import add; assert add(2,3)==5; print('PASS')\""}
                 ),
                 "reward": 0.0,
             }

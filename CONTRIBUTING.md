@@ -1,6 +1,6 @@
-# Contributing to Agent Arena
+# Contributing to OpenAgora
 
-Thank you for your interest in contributing to Agent Arena! 🎉
+Thank you for your interest in contributing to OpenAgora! 🎉
 
 This document will help you get started. Whether you are fixing a typo, adding a feature, or integrating a new sandbox provider, we are excited to have you on board.
 
@@ -33,8 +33,8 @@ This project and everyone participating in it is governed by our [Code of Conduc
 1. **Fork the repository** on GitHub.
 2. **Clone your fork** locally:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/agent-arena.git
-   cd agent-arena
+   git clone https://github.com/YOUR_USERNAME/OpenAgora.git
+   cd OpenAgora
    ```
 3. **Create a branch** for your work:
    ```bash
@@ -52,7 +52,7 @@ This project and everyone participating in it is governed by our [Code of Conduc
 
 ### Reporting Bugs
 
-Before opening a bug report, please search [existing issues](https://github.com/albert-lv/agent-arena/issues) to avoid duplicates.
+Before opening a bug report, please search [existing issues](https://github.com/albert-lv/OpenAgora/issues) to avoid duplicates.
 
 When reporting a bug, include:
 
@@ -63,7 +63,7 @@ When reporting a bug, include:
 - Relevant logs or error messages
 - Minimal reproduction case if possible
 
-Use the [Bug Report template](https://github.com/albert-lv/agent-arena/issues/new?template=bug_report.md) when opening an issue.
+Use the [Bug Report template](https://github.com/albert-lv/OpenAgora/issues/new?template=bug_report.md) when opening an issue.
 
 ### Suggesting Features
 
@@ -73,7 +73,7 @@ We welcome feature suggestions! When proposing a new feature:
 - Describe how it fits into Arena's four-plane architecture
 - Mention any alternatives you have considered
 
-Use the [Feature Request template](https://github.com/albert-lv/agent-arena/issues/new?template=feature_request.md).
+Use the [Feature Request template](https://github.com/albert-lv/OpenAgora/issues/new?template=feature_request.md).
 
 ### Contributing Code
 
@@ -108,7 +108,7 @@ Documentation improvements are some of the highest-impact contributions. If you 
 make build
 
 # Install Python SDK dependencies
-cd python/arena-sdk && uv sync --extra dev
+cd python/openagora-sdk && uv sync --extra dev
 
 # Run the test suite
 make test
@@ -117,7 +117,7 @@ make test
 ### Useful Commands
 
 ```bash
-make build          # Build ./bin/arena-server
+make build          # Build ./bin/openagora-server
 make proto          # Regenerate protobuf code
 make docker-server  # Build server Docker image
 make docker-agent   # Build minimal agent Docker image
@@ -133,15 +133,15 @@ make dev            # Start local development server
 Understanding the layout will help you navigate the codebase:
 
 ```
-agent-arena/
+OpenAgora/
 ├── go/                   # Go core
 │   ├── cmd/              # Binaries
 │   └── pkg/              # Reusable packages (server, proxy, sandbox, ...)
 ├── proto/                # gRPC / Protobuf definitions
 ├── python/               # Python packages
-│   ├── arena-sdk/        # Python client
-│   ├── arena-verify/     # Verification plugins
-│   └── arena-verl/       # veRL adapter
+│   ├── openagora-sdk/        # Python client
+│   ├── openagora-verify/     # Verification plugins
+│   └── openagora-verl/       # veRL adapter
 ├── docker/               # Dockerfiles
 ├── docs/                 # Documentation
 ├── examples/             # Examples and integrations
@@ -196,7 +196,7 @@ All changes should include tests when applicable.
 cd go && go test ./...
 
 # Python SDK tests
-cd python/arena-sdk && uv run pytest
+cd python/openagora-sdk && uv run pytest
 
 # All tests
 make test
@@ -275,7 +275,7 @@ Please be respectful and constructive in your responses. Code review is a collab
 
 ## Questions?
 
-- 💬 [GitHub Discussions](https://github.com/albert-lv/agent-arena/discussions)
-- 🐛 [GitHub Issues](https://github.com/albert-lv/agent-arena/issues)
+- 💬 [GitHub Discussions](https://github.com/albert-lv/OpenAgora/discussions)
+- 🐛 [GitHub Issues](https://github.com/albert-lv/OpenAgora/issues)
 
 Welcome aboard, and happy building! 🚀

@@ -1,6 +1,6 @@
 # Arena + veRL End-to-End Integration
 
-This example demonstrates how to use **Agent Arena** as the agent execution and
+This example demonstrates how to use **OpenAgora** as the agent execution and
 verification backend for **veRL** training.
 
 ## Architecture
@@ -46,9 +46,9 @@ Key points:
 ### 1. Start Arena Server
 
 ```bash
-cd /path/to/agent-arena
+cd /path/to/OpenAgora
 make build
-./bin/arena-server
+./bin/openagora-server
 # Server listening on :9090
 ```
 
@@ -57,7 +57,7 @@ make build
 ```bash
 # Using the minimal example agent from the repo
 make docker-agent
-# Produces: arena-agent-minimal:latest
+# Produces: openagora-agent-minimal:latest
 ```
 
 Or build your own (e.g. OpenHands, SWE-agent) as long as it reads
@@ -69,7 +69,7 @@ Or build your own (e.g. OpenHands, SWE-agent) as long as it reads
 
 ```bash
 export ARENA_ENDPOINT="localhost:9090"
-export ARENA_AGENT_IMAGE="arena-agent-minimal:latest"
+export ARENA_AGENT_IMAGE="openagora-agent-minimal:latest"
 export ARENA_LLM_BACKEND="http://localhost:8000/v1"   # your vLLM/SGLang server
 export ARENA_VERIFY_COMMAND="pytest -k regression"
 
@@ -78,7 +78,7 @@ python -m verl.trainer.main_ppo \
   ...  # rest of your normal veRL args
 ```
 
-> **Note:** You must `import arena_verl` in your training script (or in
+> **Note:** You must `import openagora_verl` in your training script (or in
 > `verl/experimental/agent_loop/__init__.py`) so that the `@register("arena_agent")`
 > decorator executes before veRL instantiates the agent loop.
 
@@ -89,7 +89,7 @@ Create `arena_agent_loop.yaml`:
 ```yaml
 # arena_agent_loop.yaml
 name: arena_agent
-_target_: arena_verl.agent_loop.ArenaAgentLoop
+_target_: openagora_verl.agent_loop.ArenaAgentLoop
 trainer_config:
   config: ${config}
 server_manager: ${server_manager}
@@ -118,13 +118,13 @@ set -e
 
 # Arena settings
 export ARENA_ENDPOINT="localhost:9090"
-export ARENA_AGENT_IMAGE="arena-agent-minimal:latest"
+export ARENA_AGENT_IMAGE="openagora-agent-minimal:latest"
 export ARENA_LLM_BACKEND="http://localhost:8000/v1"
 export ARENA_VERIFY_COMMAND="pytest -k regression"
 export ARENA_TIMEOUT_SECONDS="600"
 
-# Ensure arena_verl is imported so the agent loop registers
-export PYTHONPATH="/path/to/agent-arena/python/arena-verl/src:${PYTHONPATH}"
+# Ensure openagora_verl is imported so the agent loop registers
+export PYTHONPATH="/path/to/OpenAgora/python/openagora-verl/src:${PYTHONPATH}"
 
 python -m verl.trainer.main_ppo \
   algorithm.adv_estimator=grpo \
@@ -171,7 +171,7 @@ class CustomArenaAgentLoop(ArenaAgentLoop):
     async def run(self, sampling_params, **kwargs):
         extra = kwargs.get("extra_info", {})
         self._agent_image = extra.get("arena_image", self._agent_image)
-        self._verify_command = extra.get("arena_verify", self._verify_command)
+        self._verify_command = extra.get("openagora_verify", self._verify_command)
         return await super().run(sampling_params, **kwargs)
 ```
 
@@ -187,7 +187,7 @@ step.
 
 | Symptom | Likely Cause | Fix |
 |---------|-------------|-----|
-| `Agent loop arena_agent not registered` | `arena_verl` not imported before veRL instantiates the loop | Add `import arena_verl` at the top of your training script |
+| `Agent loop arena_agent not registered` | `openagora_verl` not imported before veRL instantiates the loop | Add `import openagora_verl` at the top of your training script |
 | `sandbox create: ...` | Docker not available or image not pulled | Check `docker ps` and `docker pull $ARENA_AGENT_IMAGE` |
 | `token budget exhausted` | Agent is making too many LLM calls | Increase `max_tokens_budget` in sampling config or reduce agent turns |
 | Reward always `0.0` | Verify command failing silently | Check Arena server logs; run verify command manually inside the sandbox |

@@ -21,7 +21,7 @@ python demo.py --mode mock --steps 50
 
 1. 启动 Arena Server:
    ```bash
-   ./bin/arena-server --sandbox=docker
+   ./bin/openagora-server --sandbox=docker
    ```
 
 2. 启动 vLLM (Qwen3.5-0.8B):
@@ -38,7 +38,7 @@ python demo.py --mode mock --steps 50
 
 - Python 3.8+
 - PyTorch
-- arena-sdk (real 模式)
+- openagora-sdk (real 模式)
 
 ## 说明
 

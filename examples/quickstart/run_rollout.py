@@ -5,9 +5,9 @@ import argparse
 import json
 import sys
 
-sys.path.insert(0, "../../python/arena-sdk/src")
+sys.path.insert(0, "../../python/openagora-sdk/src")
 
-from arena_sdk.client import ArenaClient
+from openagora_sdk.client import ArenaClient
 
 
 def main():
@@ -23,7 +23,7 @@ def main():
 
     rollout_id = client.create_rollout(
         task_id=task["task_id"],
-        image=task.get("sandbox_image", "arena-agent-minimal:latest"),
+        image=task.get("sandbox_image", "openagora-agent-minimal:latest"),
         llm_backend=task.get("llm_backend", "http://localhost:8000/v1"),
         sampling=task.get("sampling"),
         verify=task.get("verify"),

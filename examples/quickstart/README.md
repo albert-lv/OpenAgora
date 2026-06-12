@@ -33,14 +33,14 @@ From the repository root:
 make build
 ```
 
-This produces `./bin/arena-server`.
+This produces `./bin/openagora-server`.
 
 ---
 
 ## Step 2: Start Arena
 
 ```bash
-./bin/arena-server
+./bin/openagora-server
 ```
 
 The server listens on `localhost:9090` by default. Leave this terminal open.
@@ -53,7 +53,7 @@ The server listens on `localhost:9090` by default. Leave this terminal open.
 make docker-agent
 ```
 
-This builds `arena-agent-minimal:latest`, a tiny Python agent that follows the [Sandbox Contract](../../docs/sandbox-contract.md).
+This builds `openagora-agent-minimal:latest`, a tiny Python agent that follows the [Sandbox Contract](../../docs/sandbox-contract.md).
 
 ---
 
@@ -66,7 +66,7 @@ cd examples/quickstart
 ./run.sh
 ```
 
-The script will install the `arena-sdk` Python package if needed, then submit the rollout and wait for completion.
+The script will install the `openagora-sdk` Python package if needed, then submit the rollout and wait for completion.
 
 ---
 
@@ -96,7 +96,7 @@ Edit `task.json` to change the task description, sampling parameters, or verific
 {
   "task_id": "demo-task",
   "description": "Say hello to Arena",
-  "sandbox_image": "arena-agent-minimal:latest",
+  "sandbox_image": "openagora-agent-minimal:latest",
   "llm_backend": "http://localhost:8000/v1",
   "sampling": {
     "temperature": 0.7,
@@ -115,7 +115,7 @@ Edit `task.json` to change the task description, sampling parameters, or verific
 ## Explore the Code
 
 - `run.sh` — one-liner that sets up the SDK and invokes the Python script
-- `run_rollout.py` — uses `arena_sdk.client.ArenaClient` to create and monitor a rollout
+- `run_rollout.py` — uses `openagora_sdk.client.ArenaClient` to create and monitor a rollout
 - `task.json` — task definition consumed by the agent and Arena
 
 Use these files as a template for your own rollouts.
@@ -124,7 +124,7 @@ Use these files as a template for your own rollouts.
 
 ## Troubleshooting
 
-### `arena-sdk` import error
+### `openagora-sdk` import error
 
 Make sure `uv` or `pip` can install the package. The quickstart tries `pip install -e` automatically.
 

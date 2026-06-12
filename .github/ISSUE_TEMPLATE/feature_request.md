@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest an idea for Agent Arena
+about: Suggest an idea for OpenAgora
 title: '[Feature] '
 labels: enhancement
 assignees: ''

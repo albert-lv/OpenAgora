@@ -5,9 +5,9 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python/arena-sdk/src"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python/openagora-sdk/src"))
 
-from arena_sdk.client import ArenaClient
+from openagora_sdk.client import ArenaClient
 
 
 def main():
@@ -26,13 +26,13 @@ def main():
     # llm_backend is where Arena Proxy forwards requests.
     # Proxy runs on the host, so it should use localhost to reach ollama.
     # The agent inside Docker will see OPENAI_BASE_URL pointing to the Proxy
-    # via host.docker.internal (configured in arena-server).
+    # via host.docker.internal (configured in openagora-server).
     llm_backend = "http://localhost:11434/v1"
 
-    print(f"Creating rollout (image=arena-demo-agent, llm_backend={llm_backend})...")
+    print(f"Creating rollout (image=openagora-demo-agent, llm_backend={llm_backend})...")
     rollout = client.create_rollout(
         task_id=task["task_id"],
-        image="arena-demo-agent:latest",
+        image="openagora-demo-agent:latest",
         llm_backend=llm_backend,
         sampling={"temperature": 0.3, "max_tokens_budget": 2048},
         verify={"command": "cd /sandbox && python -c 'from solution import add; assert add(2,3)==5; assert add(-1,1)==0; print(\"PASS\")'"},

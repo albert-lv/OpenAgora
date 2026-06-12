@@ -35,12 +35,12 @@ else:
     ray.init(ignore_reinit_error=True)
 
 # Allow running inside the Docker image (/opt paths) or from the repo root.
-for _arena_path in ("/opt/arena-verl/src", "/opt/arena-sdk/src"):
+for _arena_path in ("/opt/openagora-verl/src", "/opt/openagora-sdk/src"):
     if os.path.isdir(_arena_path) and _arena_path not in sys.path:
         sys.path.insert(0, _arena_path)
 
-from arena_sdk.client import ArenaClient  # noqa: E402
-from arena_verl.agent_loop import ArenaAgentLoop  # noqa: E402
+from openagora_sdk.client import ArenaClient  # noqa: E402
+from openagora_verl.agent_loop import ArenaAgentLoop  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -66,7 +66,7 @@ except ImportError:
 MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen3.5-0.8B")
 DATASET_PATH = os.environ.get("DATASET_PATH", "/app/data/demo_dataset.parquet")
 ARENA_ENDPOINT = os.environ.get("ARENA_ENDPOINT", "host.docker.internal:9090")
-ARENA_AGENT_IMAGE = os.environ.get("ARENA_AGENT_IMAGE", "arena-agent-minimal:latest")
+ARENA_AGENT_IMAGE = os.environ.get("ARENA_AGENT_IMAGE", "openagora-agent-minimal:latest")
 ARENA_LLM_BACKEND = os.environ.get("ARENA_LLM_BACKEND", "http://host.docker.internal:11434/v1")
 ARENA_VERIFY_COMMAND = os.environ.get(
     "ARENA_VERIFY_COMMAND",
@@ -107,7 +107,7 @@ def load_dataset(path: str):
                     {"role": "user", "content": "Write a Python function `add(a, b)` that returns the sum of two integers."},
                 ],
                 "extra_info": json.dumps(
-                    {"arena_verify": ARENA_VERIFY_COMMAND}
+                    {"openagora_verify": ARENA_VERIFY_COMMAND}
                 ),
             }
             for i in range(4)

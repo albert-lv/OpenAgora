@@ -14,7 +14,7 @@ set -euo pipefail
 
 # --- Arena Configuration ---
 export ARENA_ENDPOINT="${ARENA_ENDPOINT:-localhost:9090}"
-export ARENA_AGENT_IMAGE="${ARENA_AGENT_IMAGE:-arena-agent-minimal:latest}"
+export ARENA_AGENT_IMAGE="${ARENA_AGENT_IMAGE:-openagora-agent-minimal:latest}"
 export ARENA_LLM_BACKEND="${ARENA_LLM_BACKEND:-http://localhost:8000/v1}"
 export ARENA_VERIFY_COMMAND="${ARENA_VERIFY_COMMAND:-true}"
 export ARENA_TIMEOUT_SECONDS="${ARENA_TIMEOUT_SECONDS:-600}"
@@ -26,7 +26,7 @@ echo "LLM backend:        $ARENA_LLM_BACKEND"
 echo "Verify command:     $ARENA_VERIFY_COMMAND"
 
 # We use a small Python wrapper (train_grpo_arena.py) instead of
-# ``python3 -m verl.trainer.main_ppo``. The wrapper imports ``arena_verl`` in
+# ``python3 -m verl.trainer.main_ppo``. The wrapper imports ``openagora_verl`` in
 # the trainer process, which registers ``ArenaAgentLoop`` as ``arena_agent``
 # with veRL's AgentLoop registry.
 

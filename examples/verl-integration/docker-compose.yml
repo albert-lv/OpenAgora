@@ -11,7 +11,7 @@ services:
   # ------------------------------------------------------------------
   ollama:
     image: ollama/ollama:latest
-    container_name: arena-ollama
+    container_name: openagora-ollama
     volumes:
       - ollama-data:/root/.ollama
     ports:
@@ -22,16 +22,16 @@ services:
       timeout: 5s
       retries: 10
     networks:
-      - arena-net
+      - openagora-net
 
   # ------------------------------------------------------------------
   # Arena Server — manages sandbox lifecycle, proxy, trajectory
   # ------------------------------------------------------------------
-  arena-server:
+  openagora-server:
     build:
       context: ../..
       dockerfile: docker/Dockerfile.server
-    container_name: arena-server
+    container_name: openagora-server
     # Mount host Docker socket so Arena can spawn sandbox containers
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -43,17 +43,17 @@ services:
       ollama:
         condition: service_started
     networks:
-      - arena-net
+      - openagora-net
 
   # ------------------------------------------------------------------
-  # Build agent image locally so arena-server can spawn it via host docker
+  # Build agent image locally so openagora-server can spawn it via host docker
   # ------------------------------------------------------------------
   agent-builder:
     build:
       context: ../..
       dockerfile: docker/Dockerfile.demo-agent
-    image: arena-demo-agent:latest
-    container_name: arena-agent-builder
+    image: openagora-demo-agent:latest
+    container_name: openagora-agent-builder
     # This service just builds the image; it exits immediately
     entrypoint: ["sh", "-c", "echo 'Agent image built'"]
 
@@ -62,7 +62,7 @@ services:
   # ------------------------------------------------------------------
   ray-head:
     image: rayproject/ray:2.40.0-py312-cpu
-    container_name: arena-ray-head
+    container_name: openagora-ray-head
     command: >
       bash -c "ray start --head --dashboard-host=0.0.0.0 --port=6379 --dashboard-port=8265 --block"
     ports:
@@ -70,7 +70,7 @@ services:
       - "8265:8265"
       - "10001:10001"
     networks:
-      - arena-net
+      - openagora-net
     deploy:
       resources:
         limits:
@@ -84,12 +84,12 @@ services:
     build:
       context: ../..
       dockerfile: docker/Dockerfile.cpu-trainer
-    container_name: arena-trainer
+    container_name: openagora-trainer
     environment:
       - MODEL_NAME=${MODEL_NAME:-Qwen/Qwen3.5-0.8B}
       - DATASET_PATH=/app/data/demo_dataset.parquet
-      - ARENA_ENDPOINT=arena-server:9090
-      - ARENA_AGENT_IMAGE=arena-demo-agent:latest
+      - ARENA_ENDPOINT=openagora-server:9090
+      - ARENA_AGENT_IMAGE=openagora-demo-agent:latest
       - ARENA_LLM_BACKEND=http://ollama:11434/v1
       - ARENA_VERIFY_COMMAND=cd /sandbox && python -c "from solution import add; assert add(2,3)==5; print('PASS')"
       - HF_HOME=/app/.cache/huggingface
@@ -102,14 +102,14 @@ services:
     depends_on:
       ollama:
         condition: service_healthy
-      arena-server:
+      openagora-server:
         condition: service_started
       agent-builder:
         condition: service_completed_successfully
       ray-head:
         condition: service_started
     networks:
-      - arena-net
+      - openagora-net
     # Prevent trainer from eating all CPU; leave headroom for ollama + sandbox
     deploy:
       resources:
@@ -122,5 +122,5 @@ volumes:
   huggingface-cache:
 
 networks:
-  arena-net:
+  openagora-net:
     driver: bridge
