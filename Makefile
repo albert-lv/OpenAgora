@@ -8,42 +8,44 @@ proto:
 	mv go/openagora/v1/*.pb.go go/proto/openagora/v1/ || true
 	rm -rf go/openagora
 	python3 -m grpc_tools.protoc \
-		--python_out=python/arena-sdk/src --grpc_python_out=python/arena-sdk/src \
+		--python_out=python/openagora-sdk/src --grpc_python_out=python/openagora-sdk/src \
 		-I proto proto/openagora/v1/*.proto
 
 # 编译 Go binary
 .PHONY: build
 build:
-	cd go && go build -o ../bin/arena-server ./cmd/arena-server
+	cd go && go build -o ../bin/openagora-server ./cmd/openagora-server
 
 # 编译 Demo binary（内置 Docker provider + mock LLM，用于快速验证）
 .PHONY: demo
 demo:
-	cd go && go build -o ../bin/arena-demo ./cmd/demo
+	cd go && go build -o ../bin/openagora-demo ./cmd/demo
 
 # Docker 构建
 .PHONY: docker-server
 docker-server:
-	docker build -t arena-server:latest -f docker/Dockerfile.server .
+	docker build -t openagora-server:latest -f docker/Dockerfile.server .
 
 .PHONY: docker-agent
 docker-agent:
-	docker build -t arena-agent-minimal:latest -f docker/Dockerfile.agent-minimal .
+	docker build -t openagora-agent-minimal:latest -f docker/Dockerfile.agent-minimal .
 
 .PHONY: docker-swe-agent
 docker-swe-agent:
-	docker build -t arena-swe-agent:latest -f docker/Dockerfile.swe-agent .
+	docker build -t openagora-swe-agent:latest -f docker/Dockerfile.swe-agent .
 
 # Python 开发
 .PHONY: sdk-install
 sdk-install:
-	cd python && uv sync
+	cd python/openagora-sdk && uv sync --extra dev
+	cd python/openagora-verl && uv sync --extra dev
+	cd python/openagora-verify && uv sync --extra dev
 
 .PHONY: sdk-test
 sdk-test:
-	cd python/arena-sdk && uv run pytest
-	cd python/arena-verl && uv run pytest
-	cd python/arena-verify && uv run pytest
+	cd python/openagora-sdk && uv run pytest
+	cd python/openagora-verl && uv run pytest
+	cd python/openagora-verify && uv run pytest
 
 # 全量测试
 .PHONY: test
@@ -54,10 +56,10 @@ test:
 # 本地开发栈
 .PHONY: dev
 dev:
-	@echo "Starting arena server + mock LLM..."
-	go run ./go/cmd/arena-server &
+	@echo "Starting OpenAgora server + mock LLM..."
+	go run ./go/cmd/openagora-server &
 	python3 examples/quickstart/mock_llm.py &
-	@echo "Arena server on :9090, mock LLM on :8000"
+	@echo "OpenAgora server on :9090, mock LLM on :8000"
 
 # 启动 mock LLM（用于 quickstart 无外部 vLLM 时）
 .PHONY: mock-llm

@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/albert-lv/agent-arena/go/pkg/sandbox"
+	"github.com/albert-lv/OpenAgora/go/pkg/sandbox"
 )
 
 // Runner executes verification commands and produces reward signals.

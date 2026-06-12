@@ -20,14 +20,14 @@ jobs:
       - name: Install Python
         run: uv python install ${{ matrix.python-version }}
       - name: Sync SDK
-        run: cd python/arena-sdk && uv sync --extra dev
+        run: cd python/openagora-sdk && uv sync --extra dev
       - name: Test SDK
-        run: cd python/arena-sdk && uv run pytest
+        run: cd python/openagora-sdk && uv run pytest
       - name: Sync verl
-        run: cd python/arena-verl && uv sync --extra dev
+        run: cd python/openagora-verl && uv sync --extra dev
       - name: Test verl
-        run: cd python/arena-verl && uv run pytest
+        run: cd python/openagora-verl && uv run pytest
       - name: Sync verify
-        run: cd python/arena-verify && uv sync --extra dev
+        run: cd python/openagora-verify && uv sync --extra dev
       - name: Test verify
-        run: cd python/arena-verify && uv run pytest
+        run: cd python/openagora-verify && uv run pytest

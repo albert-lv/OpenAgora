@@ -12,12 +12,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/albert-lv/agent-arena/go/pkg/proxy"
-	"github.com/albert-lv/agent-arena/go/pkg/sandbox"
-	"github.com/albert-lv/agent-arena/go/pkg/trajectory"
-	"github.com/albert-lv/agent-arena/go/pkg/trajectory/backend"
+	"github.com/albert-lv/OpenAgora/go/pkg/proxy"
+	"github.com/albert-lv/OpenAgora/go/pkg/sandbox"
+	"github.com/albert-lv/OpenAgora/go/pkg/trajectory"
+	"github.com/albert-lv/OpenAgora/go/pkg/trajectory/backend"
 
-	arena_pb "github.com/albert-lv/agent-arena/go/proto/arena/v1"
+	arena_pb "github.com/albert-lv/OpenAgora/go/proto/openagora/v1"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -162,7 +162,7 @@ func (s *ArenaServer) CreateRollout(ctx context.Context, req *arena_pb.CreateRol
 
 	// 2. Register rollout on the shared proxy.
 	sampling := protoToInternalSampling(req.Sampling)
-	// If arena-server runs on the host, it cannot resolve host.docker.internal.
+	// If openagora-server runs on the host, it cannot resolve host.docker.internal.
 	// Replace with localhost so the proxy can reach the LLM backend.
 	llmBackend := req.LlmBackend
 	if strings.Contains(llmBackend, "host.docker.internal") {

@@ -1,4 +1,4 @@
-FROM arena-agent-minimal:latest
+FROM openagora-agent-minimal:latest
 
 WORKDIR /app
 

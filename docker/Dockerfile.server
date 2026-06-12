@@ -1,10 +1,10 @@
 FROM golang:1.25-alpine AS builder
 WORKDIR /build
 COPY go/ ./
-RUN go build -o arena-server ./cmd/arena-server
+RUN go build -o openagora-server ./cmd/openagora-server
 
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates docker-cli
-COPY --from=builder /build/arena-server /usr/local/bin/arena-server
+COPY --from=builder /build/openagora-server /usr/local/bin/openagora-server
 EXPOSE 9090
-ENTRYPOINT ["arena-server"]
+ENTRYPOINT ["openagora-server"]

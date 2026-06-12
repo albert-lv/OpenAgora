@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/albert-lv/agent-arena/go/pkg/sandbox"
+	"github.com/albert-lv/OpenAgora/go/pkg/sandbox"
 )
 
 type mockProvider struct {

@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/albert-lv/agent-arena/go/pkg/trajectory"
+	"github.com/albert-lv/OpenAgora/go/pkg/trajectory"
 )
 
 // LocalJSONL implements a local JSONL file backend.

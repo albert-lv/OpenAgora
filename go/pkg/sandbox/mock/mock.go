@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/albert-lv/agent-arena/go/pkg/sandbox"
+	"github.com/albert-lv/OpenAgora/go/pkg/sandbox"
 )
 
 // Provider is a mock sandbox provider that never creates real containers.

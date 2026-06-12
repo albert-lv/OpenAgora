@@ -20,7 +20,7 @@ RUN pip install --no-cache-dir \
     tree-sitter-python
 
 # Copy Arena adapter script
-COPY docker/swe-agent-entrypoint.py /usr/local/bin/arena-swe-agent
-RUN chmod +x /usr/local/bin/arena-swe-agent
+COPY docker/swe-agent-entrypoint.py /usr/local/bin/openagora-swe-agent
+RUN chmod +x /usr/local/bin/openagora-swe-agent
 
-ENTRYPOINT ["/usr/local/bin/arena-swe-agent"]
+ENTRYPOINT ["/usr/local/bin/openagora-swe-agent"]

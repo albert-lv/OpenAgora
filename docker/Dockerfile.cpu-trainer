@@ -31,11 +31,11 @@ RUN pip install --no-cache-dir \
 RUN git clone --depth 1 https://github.com/volcengine/verl.git /opt/verl
 RUN cd /opt/verl && pip install --no-cache-dir -e .
 
-# Copy arena-verl into image and install
-COPY python/arena-sdk /opt/arena-sdk
-COPY python/arena-verl /opt/arena-verl
-RUN cd /opt/arena-sdk && pip install --no-cache-dir -e .
-RUN cd /opt/arena-verl && pip install --no-cache-dir -e .
+# Copy openagora-verl into image and install
+COPY python/openagora-sdk /opt/openagora-sdk
+COPY python/openagora-verl /opt/openagora-verl
+RUN cd /opt/openagora-sdk && pip install --no-cache-dir -e .
+RUN cd /opt/openagora-verl && pip install --no-cache-dir -e .
 
 WORKDIR /app
 

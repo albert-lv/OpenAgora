@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	arena_pb "github.com/albert-lv/agent-arena/go/proto/arena/v1"
-	"github.com/albert-lv/agent-arena/go/pkg/sandbox"
-	"github.com/albert-lv/agent-arena/go/pkg/trajectory"
-	"github.com/albert-lv/agent-arena/go/pkg/trajectory/backend"
+	arena_pb "github.com/albert-lv/OpenAgora/go/proto/openagora/v1"
+	"github.com/albert-lv/OpenAgora/go/pkg/sandbox"
+	"github.com/albert-lv/OpenAgora/go/pkg/trajectory"
+	"github.com/albert-lv/OpenAgora/go/pkg/trajectory/backend"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/metadata"
 )

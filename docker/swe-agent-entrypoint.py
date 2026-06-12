@@ -21,7 +21,7 @@ WORKSPACE = Path("/sandbox/workspace")
 
 
 def log(msg: str):
-    print(f"[arena-swe-agent] {msg}", flush=True)
+    print(f"[openagora-swe-agent] {msg}", flush=True)
 
 
 def read_task() -> dict:

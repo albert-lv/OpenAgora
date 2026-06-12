@@ -10,9 +10,9 @@ import (
 	"net/http"
 	"time"
 
-	arena_pb "github.com/albert-lv/agent-arena/go/proto/arena/v1"
-	docker "github.com/albert-lv/agent-arena/go/pkg/sandbox/docker"
-	"github.com/albert-lv/agent-arena/go/pkg/server"
+	arena_pb "github.com/albert-lv/OpenAgora/go/proto/openagora/v1"
+	docker "github.com/albert-lv/OpenAgora/go/pkg/sandbox/docker"
+	"github.com/albert-lv/OpenAgora/go/pkg/server"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -54,7 +54,7 @@ func main() {
 		TaskId:     "demo-task",
 		LlmBackend: llmURL,
 		Sandbox: &arena_pb.SandboxConfig{
-			Image: "arena-agent-minimal:latest",
+			Image: "openagora-agent-minimal:latest",
 		},
 		Sampling: &arena_pb.SamplingConfig{Temperature: 0.5, Seed: 42},
 	})

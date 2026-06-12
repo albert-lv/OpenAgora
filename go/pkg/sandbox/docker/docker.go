@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/albert-lv/agent-arena/go/pkg/sandbox"
+	"github.com/albert-lv/OpenAgora/go/pkg/sandbox"
 )
 
 // Provider implements the sandbox.Provider interface by shelling out to the Docker CLI.

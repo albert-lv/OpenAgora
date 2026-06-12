@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/albert-lv/agent-arena/go/pkg/trajectory"
+	"github.com/albert-lv/OpenAgora/go/pkg/trajectory"
 	"go.uber.org/zap"
 )
 

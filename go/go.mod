@@ -1,4 +1,4 @@
-module github.com/albert-lv/agent-arena/go
+module github.com/albert-lv/OpenAgora/go
 
 go 1.25.0
 
