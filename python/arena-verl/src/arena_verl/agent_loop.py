@@ -216,6 +216,9 @@ class ArenaAgentLoop(AgentLoopBase):  # type: ignore[valid-type,misc]
         # 8. Extract reward.
         reward_score = float(result.get("reward", 0.0))
 
+        # 9. Count agent turns from the trajectory.
+        num_turns = self._count_agent_turns(trajectory)
+
         metrics = AgentLoopMetrics(generate_sequences=0.0, tool_calls=0.0, compute_score=0.0)
 
         extra_fields = {
@@ -232,7 +235,7 @@ class ArenaAgentLoop(AgentLoopBase):  # type: ignore[valid-type,misc]
             response_mask=response_mask,
             response_logprobs=response_logprobs,
             reward_score=reward_score,
-            num_turns=2,  # user + assistant (tool turns are opaque inside sandbox)
+            num_turns=num_turns,
             metrics=metrics,
             extra_fields=extra_fields,
         )
@@ -306,6 +309,19 @@ class ArenaAgentLoop(AgentLoopBase):  # type: ignore[valid-type,misc]
                 continue
         return "\n".join(texts)
 
+    def _count_agent_turns(self, trajectory: list[dict[str, Any]]) -> int:
+        """Count the number of assistant/tool turns in the trajectory.
+
+        The initial user prompt is not counted; each assistant response or
+        tool call/observation emitted by the agent counts as one turn.
+        """
+        count = 0
+        for step in trajectory:
+            role = self._step_role(step)
+            if role in ("assistant", "tool", "observation"):
+                count += 1
+        return max(count, 1)
+
     def _step_role(self, step: dict[str, Any]) -> str:
         """Infer the role of a trajectory step from request/response messages.
 
@@ -346,7 +362,7 @@ class ArenaAgentLoop(AgentLoopBase):  # type: ignore[valid-type,misc]
         return "unknown"
 
     def _should_include_step_logprobs(self, step: dict[str, Any]) -> bool:
-        """Decide whether a step's logprobs should be纳入 policy gradient.
+        """Decide whether a step's logprobs should be included in policy gradient.
 
         Controlled by ``ARENA_LOGPROB_INCLUDE_ROLES`` env var (comma-separated).
         Default: ``assistant,unknown`` (unknown steps are included for backward

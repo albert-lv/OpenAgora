@@ -178,7 +178,9 @@ tokenized and returned as ``responses`` in the output ``DataProto``.
         - ``batch['sequences']``  — prompt + response concatenated
         - ``batch['attention_mask']`` — updated mask
         - ``batch['position_ids']`` — updated position IDs
-        - ``batch['old_log_probs']`` — per-token logprobs (if available)
+        - ``batch['response_mask']`` — 1 for real response tokens, 0 for padding
+        - ``batch['old_log_probs']`` — per-token logprobs (padding masked to 0)
+        - ``batch['token_level_rewards']`` — per-response-token reward broadcast
         - ``non_tensor_batch['raw_prompt']`` — original text prompts
         - ``non_tensor_batch['arena_reward']`` — verification rewards
         """
@@ -263,22 +265,35 @@ tokenized and returned as ``responses`` in the output ``DataProto``.
         log_probs_list = [r["log_probs"] for r in results]
         rewards = [r["reward"] for r in results]
 
-        # Pad responses to response_length.
+        # Pad responses to response_length and build response masks.
+        pad_token_id = self._tokenizer.pad_token_id or 0
         padded_responses = []
         padded_log_probs = []
+        response_masks = []
         for r_ids, lp in zip(response_ids_list, log_probs_list):
-            pad_len = response_length - len(r_ids)
-            if pad_len > 0:
-                r_ids = r_ids + [self._tokenizer.pad_token_id or 0] * pad_len
-                if lp is not None:
-                    lp = lp + [0.0] * pad_len
+            real_len = len(r_ids)
+            pad_len = response_length - real_len
+            # Clamp to response_length to avoid overflow.
+            real_len = min(real_len, response_length)
             r_ids = r_ids[:response_length]
+            mask = [1] * real_len + [0] * (response_length - real_len)
+            if pad_len > 0:
+                r_ids = r_ids + [pad_token_id] * pad_len
             if lp is not None:
                 lp = lp[:response_length]
+                if pad_len > 0:
+                    # Padding logprobs are masked out; 0.0 is a neutral value
+                    # that will be ignored because response_mask is 0 there.
+                    lp = lp + [0.0] * pad_len
+            else:
+                lp = [0.0] * response_length
             padded_responses.append(r_ids)
-            padded_log_probs.append(lp if lp is not None else [0.0] * response_length)
+            padded_log_probs.append(lp)
+            response_masks.append(mask)
 
         responses_tensor = torch.tensor(padded_responses, dtype=torch.long)
+        response_mask_tensor = torch.tensor(response_masks, dtype=torch.long)
+        log_probs_tensor = torch.tensor(padded_log_probs, dtype=torch.float32)
 
         # Expand input tensors to match n>1 output batch size.
         if n > 1:
@@ -294,7 +309,7 @@ tokenized and returned as ``responses`` in the output ``DataProto``.
 
         # Update attention mask and position ids for the full sequence.
         seq_len = sequences_tensor.shape[1]
-        full_attention_mask = torch.ones(out_batch_size, seq_len, dtype=torch.long)
+        full_attention_mask = torch.zeros(out_batch_size, seq_len, dtype=torch.long)
         full_attention_mask[:, :prompt_length] = attention_mask_expanded
         # Response mask: 1 for real tokens, 0 for pad.
         for i in range(out_batch_size):
@@ -303,7 +318,10 @@ tokenized and returned as ``responses`` in the output ``DataProto``.
 
         full_position_ids = torch.arange(seq_len).unsqueeze(0).expand(out_batch_size, seq_len)
 
-        log_probs_tensor = torch.tensor(padded_log_probs, dtype=torch.float32)
+        # Broadcast scalar reward to every response token.
+        rewards_tensor = torch.tensor(rewards, dtype=torch.float32).unsqueeze(1)
+        token_level_rewards = rewards_tensor.expand(out_batch_size, response_length).clone()
+        token_level_rewards[response_mask_tensor == 0] = 0.0
 
         batch = TensorDict(
             {
@@ -312,7 +330,9 @@ tokenized and returned as ``responses`` in the output ``DataProto``.
                 "sequences": sequences_tensor,
                 "attention_mask": full_attention_mask,
                 "position_ids": full_position_ids,
+                "response_mask": response_mask_tensor,
                 "old_log_probs": log_probs_tensor,
+                "token_level_rewards": token_level_rewards,
             },
             batch_size=out_batch_size,
         )

@@ -306,11 +306,45 @@ class TestRun:
         assert len(out.prompt_ids) > 0
         assert len(out.response_ids) > 0
         assert len(out.response_mask) == len(out.response_ids)
+        assert out.num_turns == 1
         mock_arena_client.create_rollout.assert_called_once()
 
     async def test_run_missing_raw_prompt(self, arena_loop):
         with pytest.raises(ValueError, match="raw_prompt"):
             await arena_loop.run(sampling_params={}, index=0)
+
+
+class TestCountAgentTurns:
+    def test_assistant_turn_counts(self, arena_loop):
+        step = {
+            "request": {
+                "messages_json": b'{"messages": [{"role": "user", "content": "hi"}]}'
+            },
+            "response": {
+                "choices_json": b'[{"message": {"role": "assistant", "content": "hello"}}]'
+            },
+        }
+        assert arena_loop._count_agent_turns([step]) == 1
+
+    def test_tool_turn_counts(self, arena_loop):
+        step = {
+            "request": {
+                "messages_json": b'{"messages": [{"role": "user", "content": "hi"}]}'
+            },
+            "response": {
+                "choices_json": b'[{"message": {"role": "assistant", "tool_calls": [{"id": "t1"}]}}]'
+            },
+        }
+        assert arena_loop._count_agent_turns([step]) == 1
+
+    def test_user_steps_do_not_count(self, arena_loop):
+        step = {
+            "request": {
+                "messages_json": b'{"messages": [{"role": "user", "content": "hi"}]}'
+            },
+            "response": {"choices_json": b'[]'},
+        }
+        assert arena_loop._count_agent_turns([step]) == 1  # min 1
 
 
 class TestRolloutProvider:
