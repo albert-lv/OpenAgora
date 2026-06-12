@@ -37,7 +37,6 @@ try:
         AgentLoopMetrics,
         register,
     )
-    from verl.utils.chat_template import apply_chat_template
     _VERL_AVAILABLE = True
 except ImportError:
     _VERL_AVAILABLE = False

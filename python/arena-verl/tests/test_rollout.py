@@ -9,6 +9,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 import numpy as np
 import pytest
 
+torch = pytest.importorskip("torch", reason="torch required for ArenaRollout tests")
+
 # Only mock veRL if it is not already installed (e.g. local dev without GPU).
 _vereal_available = False
 try:
