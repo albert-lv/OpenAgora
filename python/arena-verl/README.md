@@ -13,16 +13,17 @@ inference server.
 
 ```bash
 cd python/arena-verl
-uv sync
+uv sync --extra dev
 ```
 
-For development with veRL installed:
+For development with veRL installed (Linux with CUDA recommended):
 
 ```bash
 uv sync --extra verl --extra dev
 ```
 
-Requires Python 3.10 or later.
+Requires Python 3.10 or later. The core adapter installs without veRL and falls
+back to standalone mocks when veRL is not present.
 
 ---
 
