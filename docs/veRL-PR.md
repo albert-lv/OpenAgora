@@ -88,11 +88,16 @@ python examples/arena_grpo/train_grpo_arena.py \
 
 ### Experiment Validation
 
-- [ ] CPU smoke test: `train_cpu.py` converges for 10 steps on
-  `Qwen/Qwen3.5-0.8B`.
+- [x] CPU smoke test: `train_cpu.py` runs end-to-end for 1 iteration on
+  `Qwen/Qwen2.5-0.5B-Instruct` with `BATCH_SIZE=1` in the
+  `openagora-cpu-trainer` Docker image. The OpenAgora server successfully
+  orchestrated sandboxed agent rollouts, proxied LLM calls to Ollama
+  (`qwen3.5:0.8b`), and returned rewards from the verification plane.
+  Server logs show multiple rollouts with rewards 0/1 and the trainer
+  exited with code 0.
 - [ ] GPU GRPO test: `train_grpo_arena.sh` runs for one epoch on a single
   node with 4x A100.
-- [ ] Unit tests: `pytest verl/agent_loop/tests/test_arena_agent_loop.py`.
+- [x] Unit tests: `pytest openagora-verl/tests/` passes (26 passed, 1 skipped).
 
 ### Checklist
 
