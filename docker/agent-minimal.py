@@ -5,7 +5,7 @@ Uses only stdlib (urllib) to keep the Alpine image small.
 
 Flow:
 1. Read task from /sandbox/.arena/task.json
-2. Call LLM via OPENAI_BASE_URL (Arena Proxy -> ollama)
+2. Call LLM via OPENAI_BASE_URL (Arena Proxy -> backend)
 3. Write generated code to /sandbox/solution.py
 4. Write /sandbox/.arena/done
 """
@@ -17,12 +17,18 @@ import urllib.request
 
 
 def chat_completion(base_url: str, token: str, model: str, messages: list, temperature: float = 0.3, max_tokens: int = 512):
-    """Make an OpenAI-compatible chat completion request using urllib."""
+    """Make an OpenAI-compatible chat completion request using urllib.
+
+    Requests logprobs so the Arena proxy can record them for RL training.
+    The proxy injects top_logprobs for backends that support it (vLLM/SGLang)
+    and omits it for ollama.
+    """
     req_body = json.dumps({
         "model": model,
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
+        "logprobs": True,
     }).encode("utf-8")
 
     req = urllib.request.Request(
@@ -39,8 +45,12 @@ def chat_completion(base_url: str, token: str, model: str, messages: list, tempe
         data = json.loads(resp.read().decode("utf-8"))
         choices = data.get("choices", [])
         if choices:
-            return choices[0].get("message", {}).get("content", "")
-    return ""
+            choice = choices[0]
+            return {
+                "content": choice.get("message", {}).get("content", ""),
+                "logprobs": choice.get("logprobs", {}),
+            }
+    return {"content": "", "logprobs": {}}
 
 
 def main():
@@ -63,6 +73,7 @@ def main():
 
     # 2. Call LLM.
     content = ""
+    logprobs_info = {}
     if base_url:
         model = os.environ.get("ARENA_LLM_MODEL", "qwen3.5:0.8b")
         messages = [
@@ -76,8 +87,12 @@ def main():
             {"role": "user", "content": prompt},
         ]
         try:
-            content = chat_completion(base_url, token, model, messages)
+            result = chat_completion(base_url, token, model, messages)
+            content = result.get("content", "")
+            logprobs_info = result.get("logprobs", {}) or {}
             print(f"Generated: {content[:200]}...")
+            if logprobs_info:
+                print(f"Received logprobs for {len(logprobs_info.get('content', []))} tokens")
         except Exception as e:
             print(f"LLM call failed: {e}", file=os.sys.stderr)
     else:
@@ -90,11 +105,16 @@ def main():
     elif "```" in content:
         code = content.split("```")[1].split("```")[0].strip()
 
-    # 4. Write solution.
+    # 4. Write solution and per-response metadata.
     os.makedirs("/sandbox/.arena", exist_ok=True)
     with open("/sandbox/solution.py", "w") as f:
         f.write(code)
     print(f"Written to /sandbox/solution.py")
+
+    if logprobs_info:
+        with open("/sandbox/.arena/response.json", "w") as f:
+            json.dump({"logprobs": logprobs_info}, f)
+        print("Written /sandbox/.arena/response.json")
 
     # 5. Signal completion.
     with open("/sandbox/.arena/done", "w") as f:

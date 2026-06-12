@@ -70,7 +70,13 @@ By default the server listens on `:9090`. You should see log output indicating t
 > ```
 > The mock provider does not create real containers, but the rest of the flow (proxy, trajectory, verification) works normally.
 
-> **Note on LLM backend:** The default `task.json` in `examples/quickstart` points to a vLLM server at `http://localhost:8000/v1`. If you do not have a vLLM instance running, you can start a mock LLM server with `make demo` or edit `task.json` to point to any OpenAI-compatible endpoint.
+> **Note on LLM backend:** The default `task.json` in `examples/quickstart` points to a mock LLM server at `http://localhost:8000/v1`. For real inference you can use any OpenAI-compatible endpoint. Arena currently supports three backend options:
+>
+> 1. **Ollama** — easiest for local CPU/GPU development (`http://localhost:11434/v1`).
+> 2. **vLLM** — recommended for high-throughput GPU inference (`http://localhost:8000/v1`).
+> 3. **SGLang** — drop-in vLLM alternative, also served on port `8000` by convention in our examples.
+>
+> The proxy automatically detects ollama and only injects `logprobs`, while vLLM/SGLang get `logprobs` plus `top_logprobs` for richer RL training signals.
 
 ---
 
@@ -102,6 +108,44 @@ Trajectory steps: 4
 ```
 
 For a deeper walkthrough, see [examples/quickstart/README.md](../examples/quickstart/README.md).
+
+---
+
+## Switch the Inference Backend
+
+The inference backend is selected per-rollout via the `llm_backend` field passed to `CreateRollout`. No server restart is required.
+
+### Ollama (default local backend)
+
+```bash
+ollama run qwen3.5:0.8b
+# llm_backend: http://localhost:11434/v1
+```
+
+### vLLM
+
+Build and start the optional vLLM image:
+
+```bash
+docker build -f docker/Dockerfile.vllm -t arena-vllm:latest .
+docker run --rm --gpus all -p 8000:8000 \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  arena-vllm:latest \
+  --model Qwen/Qwen3.5-0.8B --served-model-name qwen3.5:0.8b
+```
+
+Then point rollouts to `http://localhost:8000/v1`.
+
+For a fully orchestrated stack, use the vLLM compose file:
+
+```bash
+export VLLM_MODEL=Qwen/Qwen3.5-0.8B
+docker compose -f examples/verl-integration/docker-compose.vllm.yml up --build
+```
+
+### SGLang
+
+SGLang exposes an OpenAI-compatible server as well. Replace the vLLM image with `lmsysorg/sglang:latest` in the compose file, expose port `30000`, and set `ARENA_LLM_BACKEND=http://sglang:30000/v1`.
 
 ---
 

@@ -160,7 +160,7 @@ func (p *Proxy) handleChatCompletions(w http.ResponseWriter, r *http.Request, rs
 	_ = r.Body.Close()
 
 	// 1. Inject sampling parameters.
-	body, err = injectSampling(body, rs.Sampling)
+	body, err = injectSampling(body, rs.Sampling, rs.BackendURL)
 	if err != nil {
 		p.logger.Warn("failed to inject sampling", zap.Error(err))
 		// Continue with original body on injection failure.
@@ -436,7 +436,7 @@ func (p *Proxy) newBackendRequest(r *http.Request, body []byte, backend *url.URL
 }
 
 // injectSampling rewrites the request JSON to enforce per-rollout sampling params.
-func injectSampling(body []byte, sampling *trajectory.SamplingConfig) ([]byte, error) {
+func injectSampling(body []byte, sampling *trajectory.SamplingConfig, backendURL *url.URL) ([]byte, error) {
 	if sampling == nil {
 		return body, nil
 	}
@@ -464,7 +464,29 @@ func injectSampling(body []byte, sampling *trajectory.SamplingConfig) ([]byte, e
 	// Request logprobs from backend to support RL training.
 	// Note: ollama supports logprobs but not top_logprobs.
 	req["logprobs"] = true
+	// vLLM / SGLang support top_logprobs; ollama does not. Only inject when we
+	// can reasonably infer a non-ollama backend and the client did not set it.
+	if _, hasTop := req["top_logprobs"]; !hasTop && backendSupportsTopLogprobs(backendURL) {
+		req["top_logprobs"] = 20
+	}
 	return json.Marshal(req)
+}
+
+// backendSupportsTopLogprobs heuristically decides whether the backend is
+// likely to support OpenAI-style top_logprobs. ollama is explicitly excluded.
+func backendSupportsTopLogprobs(u *url.URL) bool {
+	if u == nil {
+		return false
+	}
+	host := strings.ToLower(u.Host)
+	if strings.Contains(host, "ollama") {
+		return false
+	}
+	// ollama default port.
+	if strings.HasSuffix(host, ":11434") {
+		return false
+	}
+	return true
 }
 
 // extractBearerToken parses the Authorization header.

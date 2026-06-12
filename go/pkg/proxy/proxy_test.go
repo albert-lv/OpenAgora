@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -308,7 +309,8 @@ func TestInjectSampling(t *testing.T) {
 		Seed:        123,
 	}
 	body := []byte(`{"model":"gpt-4","messages":[]}`)
-	out, err := injectSampling(body, sampling)
+	vllmURL, _ := url.Parse("http://vllm:8000/v1")
+	out, err := injectSampling(body, sampling, vllmURL)
 	if err != nil {
 		t.Fatalf("inject sampling: %v", err)
 	}
@@ -324,6 +326,26 @@ func TestInjectSampling(t *testing.T) {
 	}
 	if req["seed"] != float64(123) {
 		t.Fatalf("seed: %v", req["seed"])
+	}
+	if req["logprobs"] != true {
+		t.Fatalf("logprobs: %v", req["logprobs"])
+	}
+	if req["top_logprobs"] != float64(20) {
+		t.Fatalf("top_logprobs: %v", req["top_logprobs"])
+	}
+
+	// ollama backend must NOT receive top_logprobs.
+	ollamaURL, _ := url.Parse("http://localhost:11434/v1")
+	out, err = injectSampling(body, sampling, ollamaURL)
+	if err != nil {
+		t.Fatalf("inject sampling ollama: %v", err)
+	}
+	req = map[string]any{}
+	if err := json.Unmarshal(out, &req); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if _, ok := req["top_logprobs"]; ok {
+		t.Fatal("ollama backend should not receive top_logprobs")
 	}
 }
 

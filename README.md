@@ -68,7 +68,7 @@ make build
 > ```
 > The mock provider does not create real containers, but the rest of the flow (proxy, trajectory, verification) works normally.
 
-> **Note on LLM backend:** The default `task.json` in `examples/quickstart` points to a vLLM server at `http://localhost:8000/v1`. If you do not have a vLLM instance running, you can start a mock LLM server with `make demo` or edit `task.json` to point to any OpenAI-compatible endpoint.
+> **Note on LLM backend:** The default `task.json` points to a mock LLM. Arena supports Ollama, vLLM, and SGLang as inference backends. The proxy injects `logprobs` for all backends and `top_logprobs` for vLLM/SGLang. See [docs/getting-started.md](docs/getting-started.md) for backend setup instructions.
 
 ### 3. Run Your First Rollout
 

@@ -1,28 +1,59 @@
 version: "3.8"
 
-# Arena + Ollama reference stack.
+# Arena + vLLM/SGLang optional inference backend.
 #
-# To use vLLM or SGLang as the inference backend instead, see
-# docker-compose.vllm.yml in this directory.
+# This compose file is a drop-in replacement for docker-compose.yml.
+# It replaces the Ollama service with a vLLM OpenAI-compatible server.
+#
+# Quick start:
+#   export VLLM_MODEL=Qwen/Qwen3.5-0.8B
+#   export VLLM_SERVED_MODEL_NAME=qwen3.5:0.8b
+#   docker compose -f examples/verl-integration/docker-compose.vllm.yml up --build
+#
+# Notes:
+#   - vLLM requires Linux and preferably NVIDIA GPUs. On macOS, run this on a
+#     Linux host or inside a VM with GPU passthrough.
+#   - The trainer service mounts host HuggingFace cache so the same model can
+#     be used for both inference (vLLM) and training (Transformers).
+#   - If you prefer SGLang, replace the vllm service image with
+#     lmsysorg/sglang:latest and update ARENA_LLM_BACKEND to http://vllm:30000/v1.
 
 services:
   # ------------------------------------------------------------------
-  # Ollama — local LLM inference server (default reference backend)
+  # vLLM — OpenAI-compatible inference server
   # ------------------------------------------------------------------
-  ollama:
-    image: ollama/ollama:latest
-    container_name: arena-ollama
+  vllm:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.vllm
+    container_name: arena-vllm
+    command: >
+      --model ${VLLM_MODEL:-Qwen/Qwen3.5-0.8B}
+      --served-model-name ${VLLM_SERVED_MODEL_NAME:-qwen3.5:0.8b}
+      --host 0.0.0.0
+      --port 8000
+      --trust-remote-code
+      --max-model-len 4096
+      --gpu-memory-utilization ${VLLM_GPU_UTIL:-0.85}
     volumes:
-      - ollama-data:/root/.ollama
+      - huggingface-cache:/root/.cache/huggingface
     ports:
-      - "11434:11434"
+      - "8000:8000"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
     networks:
       - arena-net
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   # ------------------------------------------------------------------
   # Arena Server — manages sandbox lifecycle, proxy, trajectory
@@ -32,15 +63,15 @@ services:
       context: ../..
       dockerfile: docker/Dockerfile.server
     container_name: arena-server
-    # Mount host Docker socket so Arena can spawn sandbox containers
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "9090:9090"
+      - "9091:9091"
     environment:
       - PROXY_ADVERTISE_HOST=host.docker.internal
     depends_on:
-      ollama:
+      vllm:
         condition: service_started
     networks:
       - arena-net
@@ -54,28 +85,7 @@ services:
       dockerfile: docker/Dockerfile.demo-agent
     image: arena-demo-agent:latest
     container_name: arena-agent-builder
-    # This service just builds the image; it exits immediately
     entrypoint: ["sh", "-c", "echo 'Agent image built'"]
-
-  # ------------------------------------------------------------------
-  # Ray Head — distributed training coordinator
-  # ------------------------------------------------------------------
-  ray-head:
-    image: rayproject/ray:2.40.0-py312-cpu
-    container_name: arena-ray-head
-    command: >
-      bash -c "ray start --head --dashboard-host=0.0.0.0 --port=6379 --dashboard-port=8265 --block"
-    ports:
-      - "6379:6379"
-      - "8265:8265"
-      - "10001:10001"
-    networks:
-      - arena-net
-    deploy:
-      resources:
-        limits:
-          cpus: "1.0"
-          memory: 2G
 
   # ------------------------------------------------------------------
   # CPU Trainer — veRL + ArenaAgentLoop, pure CPU
@@ -86,31 +96,27 @@ services:
       dockerfile: docker/Dockerfile.cpu-trainer
     container_name: arena-trainer
     environment:
-      - MODEL_NAME=Qwen/Qwen2.5-0.5B-Instruct
+      - MODEL_NAME=${VLLM_MODEL:-Qwen/Qwen3.5-0.8B}
       - DATASET_PATH=/app/data/demo_dataset.parquet
       - ARENA_ENDPOINT=arena-server:9090
       - ARENA_AGENT_IMAGE=arena-demo-agent:latest
-      - ARENA_LLM_BACKEND=http://ollama:11434/v1
+      - ARENA_LLM_BACKEND=http://vllm:8000/v1
       - ARENA_VERIFY_COMMAND=cd /sandbox && python -c "from solution import add; assert add(2,3)==5; print('PASS')"
       - HF_HOME=/app/.cache/huggingface
       - TRANSFORMERS_OFFLINE=0
       - PYTHONUNBUFFERED=1
-      - RAY_ADDRESS=ray-head:6379
     volumes:
       - huggingface-cache:/app/.cache/huggingface
       - ./data:/app/data
     depends_on:
-      ollama:
+      vllm:
         condition: service_healthy
       arena-server:
         condition: service_started
       agent-builder:
         condition: service_completed_successfully
-      ray-head:
-        condition: service_started
     networks:
       - arena-net
-    # Prevent trainer from eating all CPU; leave headroom for ollama + sandbox
     deploy:
       resources:
         limits:
@@ -118,7 +124,6 @@ services:
           memory: 4G
 
 volumes:
-  ollama-data:
   huggingface-cache:
 
 networks:
