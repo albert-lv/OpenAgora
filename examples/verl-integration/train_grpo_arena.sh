@@ -19,18 +19,16 @@ export ARENA_LLM_BACKEND="${ARENA_LLM_BACKEND:-http://localhost:8000/v1}"
 export ARENA_VERIFY_COMMAND="${ARENA_VERIFY_COMMAND:-true}"
 export ARENA_TIMEOUT_SECONDS="${ARENA_TIMEOUT_SECONDS:-600}"
 
-# Ensure arena_verl package is importable so the agent loop registers.
-ARENA_VERL_SRC="$(cd "$(dirname "$0")/../../python/arena-verl/src" && pwd)"
-export PYTHONPATH="${ARENA_VERL_SRC}:${PYTHONPATH:-}"
-
 # Verify prerequisites
 echo "Arena endpoint:     $ARENA_ENDPOINT"
 echo "Agent image:        $ARENA_AGENT_IMAGE"
 echo "LLM backend:        $ARENA_LLM_BACKEND"
 echo "Verify command:     $ARENA_VERIFY_COMMAND"
-echo "Arena verl src:     $ARENA_VERL_SRC"
 
-python3 -c "import arena_verl; print('arena-verl version:', arena_verl.__doc__ or 'OK')"
+# We use a small Python wrapper (train_grpo_arena.py) instead of
+# ``python3 -m verl.trainer.main_ppo``. The wrapper imports ``arena_verl`` in
+# the trainer process, which registers ``ArenaAgentLoop`` as ``arena_agent``
+# with veRL's AgentLoop registry.
 
 # --- Training Arguments ---
 # Adjust these to match your dataset, model, and cluster.
@@ -38,7 +36,7 @@ TRAIN_FILES="${TRAIN_FILES:-./data/train.parquet}"
 VAL_FILES="${VAL_FILES:-./data/test.parquet}"
 MODEL_PATH="${MODEL_PATH:-Qwen/Qwen2.5-7B-Instruct}"
 
-python3 -m verl.trainer.main_ppo \
+python3 "$(dirname "$0")/train_grpo_arena.py" \
   algorithm.adv_estimator=grpo \
   data.train_files="$TRAIN_FILES" \
   data.val_files="$VAL_FILES" \
