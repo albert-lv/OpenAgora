@@ -345,7 +345,7 @@ def main():
     logger.info(f"Arena endpoint: {ARENA_ENDPOINT}")
     logger.info(f"LLM backend: {ARENA_LLM_BACKEND}")
     logger.info(f"PPO iterations: {NUM_ITERATIONS}, epochs/iteration: {PPO_EPOCHS}")
-    logger.info()
+    logger.info("")
 
     # ------------------------------------------------------------------
     # 1. Load model & tokenizer
@@ -359,14 +359,14 @@ def main():
     logger.info(f"Model loaded: {sum(p.numel() for p in actor_critic.parameters()) / 1e6:.1f}M params")
 
     optimizer = torch.optim.AdamW(actor_critic.parameters(), lr=LEARNING_RATE)
-    logger.info()
+    logger.info("")
 
     # ------------------------------------------------------------------
     # 2. Load dataset
     # ------------------------------------------------------------------
     dataset = load_dataset(DATASET_PATH)
     logger.info(f"Dataset loaded: {len(dataset)} samples")
-    logger.info()
+    logger.info("")
 
     agent_loop = SimpleArenaAgentLoop(tokenizer=tokenizer)
 
