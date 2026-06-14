@@ -157,13 +157,28 @@ class ArenaAgentLoop(AgentLoopBase):  # type: ignore[valid-type,misc]
             prompt_ids = prompt_ids[-self._prompt_length :]
 
         # 3. Create Arena rollout.
-        task_payload = json.dumps(
-            {
-                "task_id": kwargs.get("index", "0"),
-                "prompt": prompt_text,
-                "messages": messages,
-            }
-        ).encode("utf-8")
+        # Allow per-sample task file override via extra_info (e.g., Code Colosseum problems).
+        extra = kwargs.get("extra_info", {})
+        if isinstance(extra, str):
+            try:
+                extra = json.loads(extra)
+            except json.JSONDecodeError:
+                extra = {}
+
+        custom_task_file = extra.get("task_file")
+        if custom_task_file:
+            if isinstance(custom_task_file, str):
+                task_payload = custom_task_file.encode("utf-8")
+            else:
+                task_payload = custom_task_file
+        else:
+            task_payload = json.dumps(
+                {
+                    "task_id": kwargs.get("index", "0"),
+                    "prompt": prompt_text,
+                    "messages": messages,
+                }
+            ).encode("utf-8")
 
         sampling_cfg = {
             "temperature": sampling_params.get("temperature", 1.0),
@@ -171,13 +186,6 @@ class ArenaAgentLoop(AgentLoopBase):  # type: ignore[valid-type,misc]
             "seed": sampling_params.get("seed", 0),
         }
 
-        # Allow per-sample verify command override via extra_info.
-        extra = kwargs.get("extra_info", {})
-        if isinstance(extra, str):
-            try:
-                extra = json.loads(extra)
-            except json.JSONDecodeError:
-                extra = {}
         verify_cmd = extra.get("openagora_verify", self._verify_command)
 
         rollout_info = self._arena.create_rollout(

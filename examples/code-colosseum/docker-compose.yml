@@ -1,0 +1,93 @@
+# Code Colosseum: full-stack RL Arena demo.
+# Usage:
+#   docker compose -f examples/code-colosseum/docker-compose.yml up --build
+# Then open http://localhost:3000
+
+services:
+  mock-llm:
+    build:
+      context: ../..
+      dockerfile: examples/code-colosseum/agent/Dockerfile.agent
+    command: ["python3", "-u", "/app/mock_llm_colosseum.py", "--port", "8000", "--host", "0.0.0.0"]
+    networks:
+      - colosseum
+
+  arena-server:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.server
+    environment:
+      - ARENA_PROXY_ADVERTISE_HOST=arena-server
+      - TMPDIR=/tmp/arena-colosseum-tmp
+      - ARENA_DOCKER_NETWORK=colosseum
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/arena-colosseum-tmp:/tmp/arena-colosseum-tmp
+    networks:
+      - colosseum
+
+  orchestrator:
+    build:
+      context: ../..
+      dockerfile: examples/code-colosseum/backend/Dockerfile
+    environment:
+      - ARENA_ENDPOINT=arena-server:9090
+      - ARENA_AGENT_IMAGE=openagora-code-colosseum-agent:latest
+      - ARENA_LLM_BACKEND=http://mock-llm:8000/v1
+      - PROBLEMS_DIR=/app/problems
+      - ELO_STATE_PATH=/app/data/elo.json
+      - TRAINING_METRICS_PATH=/app/data/metrics.jsonl
+    volumes:
+      - colosseum-data:/app/data
+    depends_on:
+      - arena-server
+      - mock-llm
+    networks:
+      - colosseum
+
+  dashboard:
+    build:
+      context: ../..
+      dockerfile: examples/code-colosseum/dashboard/Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - orchestrator
+    networks:
+      - colosseum
+
+  # RL trainer. Default uses Qwen2.5-0.5B for CPU-friendly training.
+  # Increase BATCH_SIZE / PPO_EPOCHS or swap MODEL_NAME for stronger hardware.
+  trainer:
+    build:
+      context: ../..
+      dockerfile: examples/code-colosseum/training/Dockerfile
+    environment:
+      - ARENA_ENDPOINT=arena-server:9090
+      - ARENA_AGENT_IMAGE=openagora-code-colosseum-agent:latest
+      - ARENA_LLM_BACKEND=http://mock-llm:8000/v1
+      - PROBLEMS_DIR=/app/problems
+      - METRICS_PATH=/app/data/metrics.jsonl
+      - CHECKPOINT_DIR=/app/checkpoints
+      - MODEL_NAME=Qwen/Qwen2.5-0.5B-Instruct
+      - NUM_ITERATIONS=3
+      - BATCH_SIZE=1
+      - PPO_EPOCHS=1
+      - MAX_PROMPT_LEN=64
+      - MAX_RESPONSE_LEN=128
+    volumes:
+      - colosseum-data:/app/data
+      - ~/.cache/huggingface:/app/.cache/huggingface
+    depends_on:
+      - arena-server
+      - mock-llm
+    networks:
+      - colosseum
+
+networks:
+  colosseum:
+    driver: bridge
+    name: colosseum
+
+volumes:
+  colosseum-data:

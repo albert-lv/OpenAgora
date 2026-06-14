@@ -1,0 +1,11 @@
+{
+  "id": "longest-common-prefix",
+  "title": "Longest Common Prefix",
+  "difficulty": "easy",
+  "tags": ["string"],
+  "description": "Write a function to find the longest common prefix string amongst an array of strings.\nIf there is no common prefix, return an empty string \"\".",
+  "function_signature": "def longest_common_prefix(strs: list[str]) -> str:",
+  "language": "python",
+  "time_limit_ms": 1000,
+  "memory_limit_mb": 256
+}

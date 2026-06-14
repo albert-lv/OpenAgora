@@ -1,0 +1,13 @@
+# Code Colosseum agent image.
+# Extends the minimal agent pattern with pytest for verification.
+FROM python:3.12-slim
+
+WORKDIR /app
+COPY examples/code-colosseum/agent/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+COPY examples/code-colosseum/agent/code_colosseum_agent.py /app/agent.py
+COPY examples/code-colosseum/agent/mock_llm_colosseum.py /app/mock_llm_colosseum.py
+
+WORKDIR /sandbox
+CMD ["python3", "/app/agent.py"]

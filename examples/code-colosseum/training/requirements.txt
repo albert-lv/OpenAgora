@@ -1,0 +1,8 @@
+# Base image provides openagora-sdk and openagora-verl.
+# Extra deps for the Colosseum trainer.
+torch>=2.0.0
+transformers>=4.40.0
+peft>=0.11.0
+accelerate>=0.30.0
+pandas>=2.0.0
+numpy>=1.24.0

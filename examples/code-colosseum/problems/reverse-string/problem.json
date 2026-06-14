@@ -1,0 +1,11 @@
+{
+  "id": "reverse-string",
+  "title": "Reverse String",
+  "difficulty": "easy",
+  "tags": ["string", "two-pointers"],
+  "description": "Write a function that reverses a string. The input string is given as a list of characters.\nYou must do it in-place with O(1) extra memory.",
+  "function_signature": "def reverse_string(s: list[str]) -> None:",
+  "language": "python",
+  "time_limit_ms": 1000,
+  "memory_limit_mb": 256
+}

@@ -1,0 +1,415 @@
+#!/usr/bin/env python3
+"""
+Code Colosseum PPO training skeleton.
+
+Adapts the CPU demo trainer to train on the Code Colosseum problem bank.
+Uses mock LLM by default so the skeleton can run end-to-end without GPUs.
+"""
+
+import asyncio
+import json
+import logging
+import os
+import random
+import sys
+from pathlib import Path
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from peft import LoraConfig, get_peft_model
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+for _arena_path in ("/opt/openagora-verl/src", "/opt/openagora-sdk/src"):
+    if os.path.isdir(_arena_path) and _arena_path not in sys.path:
+        sys.path.insert(0, _arena_path)
+
+from openagora_sdk.client import ArenaClient
+from openagora_verl.agent_loop import ArenaAgentLoop
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
+from problems import load_problems
+from reward_shaper import compute_reward
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+logger = logging.getLogger(__name__)
+
+try:
+    from verl.experimental.agent_loop.agent_loop import AgentLoopOutput
+except ImportError:
+    class AgentLoopOutput:
+        def __init__(self, **kwargs):
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+
+
+MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-0.5B-Instruct")
+ARENA_ENDPOINT = os.environ.get("ARENA_ENDPOINT", "host.docker.internal:9090")
+ARENA_AGENT_IMAGE = os.environ.get("ARENA_AGENT_IMAGE", "openagora-code-colosseum-agent:latest")
+ARENA_LLM_BACKEND = os.environ.get("ARENA_LLM_BACKEND", "http://host.docker.internal:8000/v1")
+ARENA_VERIFY_COMMAND = os.environ.get("ARENA_VERIFY_COMMAND", "true")
+PROBLEMS_DIR = os.environ.get("PROBLEMS_DIR", str(Path(__file__).parent.parent / "problems"))
+METRICS_PATH = Path(os.environ.get("METRICS_PATH", "/app/data/metrics.jsonl"))
+CHECKPOINT_DIR = Path(os.environ.get("CHECKPOINT_DIR", "/app/checkpoints"))
+
+DEVICE = "cpu"
+BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "2"))
+MAX_PROMPT_LEN = int(os.environ.get("MAX_PROMPT_LEN", "64"))
+MAX_RESPONSE_LEN = int(os.environ.get("MAX_RESPONSE_LEN", "128"))
+LEARNING_RATE = float(os.environ.get("LEARNING_RATE", "1e-5"))
+PPO_EPOCHS = int(os.environ.get("PPO_EPOCHS", "2"))
+CLIP_EPS = float(os.environ.get("CLIP_EPS", "0.2"))
+VF_COEF = float(os.environ.get("VF_COEF", "0.5"))
+ENT_COEF = float(os.environ.get("ENT_COEF", "0.01"))
+MAX_GRAD_NORM = float(os.environ.get("MAX_GRAD_NORM", "1.0"))
+NUM_ITERATIONS = int(os.environ.get("NUM_ITERATIONS", "1"))
+
+
+class ActorCritic(nn.Module):
+    def __init__(self, model_name: str, use_lora: bool = True):
+        super().__init__()
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            trust_remote_code=True,
+            torch_dtype=torch.float32,
+        )
+        if use_lora:
+            lora_config = LoraConfig(
+                r=8,
+                lora_alpha=16,
+                target_modules=["q_proj", "v_proj"],
+                lora_dropout=0.05,
+                bias="none",
+                task_type="CAUSAL_LM",
+            )
+            self.model = get_peft_model(self.model, lora_config)
+            self.model.print_trainable_parameters()
+        hidden_size = self.model.config.hidden_size
+        self.value_head = nn.Linear(hidden_size, 1)
+
+    def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor):
+        outputs = self.model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            output_hidden_states=True,
+        )
+        logits = outputs.logits.to(torch.float32)
+        hidden_states = outputs.hidden_states[-1].to(torch.float32)
+        values = self.value_head(hidden_states).squeeze(-1)
+        return logits, values
+
+
+class ColosseumAgentLoop(ArenaAgentLoop):
+    def __init__(self, tokenizer, **kwargs):
+        self.tokenizer = tokenizer
+        self.processor = None
+        self.config = None
+        self._tokenizer = tokenizer
+        self._processor = None
+        self._prompt_length = MAX_PROMPT_LEN
+        self._response_length = MAX_RESPONSE_LEN
+        self._agent_image = ARENA_AGENT_IMAGE
+        self._llm_backend = ARENA_LLM_BACKEND
+        self._verify_command = ARENA_VERIFY_COMMAND
+        self._timeout_seconds = 300
+        self._arena = ArenaClient(ARENA_ENDPOINT)
+
+
+def build_dataset():
+    """Build a dataset from the problem bank."""
+    os.environ["PROBLEMS_DIR"] = PROBLEMS_DIR
+    problems = load_problems()
+    records = []
+    for problem in problems.values():
+        task_file = problem.build_task_file()
+        prompt = (
+            f"Solve this problem:\n\n{problem.title}\n\n"
+            f"{problem.description}\n\n"
+            f"Function signature:\n{problem.function_signature}\n\n"
+            f"Write only the Python solution."
+        )
+        records.append(
+            {
+                "index": problem.id,
+                "raw_prompt": [
+                    {"role": "system", "content": "You are an expert competitive programmer."},
+                    {"role": "user", "content": prompt},
+                ],
+                "extra_info": {
+                    "openagora_verify": problem.build_verify_command(),
+                    "task_file": task_file.decode("utf-8"),
+                },
+            }
+        )
+    return records
+
+
+async def run_rollouts(agent_loop: ColosseumAgentLoop, dataset: list[dict]):
+    outputs = []
+    for sample in dataset[:BATCH_SIZE]:
+        idx = sample["index"]
+        logger.info(f"\n--- Problem {idx} ---")
+        out = await agent_loop.run(
+            sampling_params={"temperature": 0.3, "top_p": 0.9},
+            raw_prompt=sample["raw_prompt"],
+            index=idx,
+            extra_info=sample.get("extra_info", {}),
+        )
+        outputs.append(out)
+        print(f"  {idx}: reward={out.reward_score}")
+    return outputs
+
+
+def postprocess_to_tensors(outputs: list, tokenizer, pad_token_id: int = 0):
+    batch_prompts = []
+    batch_responses = []
+    batch_masks = []
+    batch_rewards = []
+
+    for out in outputs:
+        p_ids = out.prompt_ids[:MAX_PROMPT_LEN]
+        r_ids = out.response_ids[:MAX_RESPONSE_LEN]
+        mask = out.response_mask[:MAX_RESPONSE_LEN]
+
+        p_ids = p_ids + [pad_token_id] * (MAX_PROMPT_LEN - len(p_ids))
+        r_ids = r_ids + [pad_token_id] * (MAX_RESPONSE_LEN - len(r_ids))
+        mask = mask + [0] * (MAX_RESPONSE_LEN - len(mask))
+
+        batch_prompts.append(p_ids)
+        batch_responses.append(r_ids)
+        batch_masks.append(mask)
+        batch_rewards.append(out.reward_score or 0.0)
+
+    return {
+        "prompts": torch.tensor(batch_prompts, dtype=torch.long),
+        "responses": torch.tensor(batch_responses, dtype=torch.long),
+        "response_mask": torch.tensor(batch_masks, dtype=torch.long),
+        "rewards": torch.tensor(batch_rewards, dtype=torch.float32),
+    }
+
+
+def gather_logprobs(logits: torch.Tensor, tokens: torch.Tensor) -> torch.Tensor:
+    log_probs = F.log_softmax(logits, dim=-1)
+    return log_probs.gather(2, tokens.unsqueeze(-1)).squeeze(-1)
+
+
+def compute_ppo_metrics(actor_critic: ActorCritic, batch: dict, pad_token_id: int):
+    prompts = batch["prompts"].to(DEVICE)
+    responses = batch["responses"].to(DEVICE)
+    response_mask = batch["response_mask"].to(DEVICE)
+    rewards = batch["rewards"].to(DEVICE)
+
+    full_input_ids = torch.cat([prompts, responses], dim=1)
+    attention_mask = (full_input_ids != pad_token_id).long()
+
+    with torch.no_grad():
+        logits, values = actor_critic(full_input_ids, attention_mask)
+        response_logits = logits[:, MAX_PROMPT_LEN - 1 : MAX_PROMPT_LEN + MAX_RESPONSE_LEN - 1, :]
+        response_values = values[:, MAX_PROMPT_LEN : MAX_PROMPT_LEN + MAX_RESPONSE_LEN]
+
+        token_logprobs = gather_logprobs(response_logits, responses)
+        seq_logprobs = (token_logprobs * response_mask).sum(dim=1) / (response_mask.sum(dim=1) + 1e-8)
+        seq_values = (response_values * response_mask).sum(dim=1) / (response_mask.sum(dim=1) + 1e-8)
+
+        advantages = rewards - seq_values
+        returns = rewards
+
+    return seq_logprobs, seq_values, advantages, returns
+
+
+def ppo_update(
+    actor_critic: ActorCritic,
+    optimizer: torch.optim.Optimizer,
+    batch: dict,
+    old_logprobs: torch.Tensor,
+    advantages: torch.Tensor,
+    returns: torch.Tensor,
+    pad_token_id: int,
+) -> dict:
+    prompts = batch["prompts"].to(DEVICE)
+    responses = batch["responses"].to(DEVICE)
+    response_mask = batch["response_mask"].to(DEVICE)
+
+    full_input_ids = torch.cat([prompts, responses], dim=1)
+    attention_mask = (full_input_ids != pad_token_id).long()
+
+    logits, values = actor_critic(full_input_ids, attention_mask)
+    response_logits = logits[:, MAX_PROMPT_LEN - 1 : MAX_PROMPT_LEN + MAX_RESPONSE_LEN - 1, :]
+    response_values = values[:, MAX_PROMPT_LEN : MAX_PROMPT_LEN + MAX_RESPONSE_LEN]
+
+    token_logprobs = gather_logprobs(response_logits, responses)
+    new_logprobs = (token_logprobs * response_mask).sum(dim=1) / (response_mask.sum(dim=1) + 1e-8)
+    value_est = (response_values * response_mask).sum(dim=1) / (response_mask.sum(dim=1) + 1e-8)
+
+    ratio = torch.exp(new_logprobs - old_logprobs)
+    surr1 = ratio * advantages
+    surr2 = torch.clamp(ratio, 1 - CLIP_EPS, 1 + CLIP_EPS) * advantages
+    policy_loss = -torch.min(surr1, surr2).mean()
+
+    value_loss = F.mse_loss(value_est, returns)
+    entropy = -(torch.exp(token_logprobs) * token_logprobs * response_mask).sum(dim=1) / (response_mask.sum(dim=1) + 1e-8)
+    entropy_loss = -entropy.mean()
+
+    loss = policy_loss + VF_COEF * value_loss + ENT_COEF * entropy_loss
+
+    optimizer.zero_grad()
+    loss.backward()
+    trainable_params = [p for p in actor_critic.parameters() if p.requires_grad]
+    nn.utils.clip_grad_norm_(trainable_params, MAX_GRAD_NORM)
+    optimizer.step()
+
+    approx_kl = ((old_logprobs - new_logprobs) ** 2).mean().item() / 2
+    return {
+        "loss": loss.item(),
+        "policy_loss": policy_loss.item(),
+        "value_loss": value_loss.item(),
+        "entropy": entropy.mean().item(),
+        "approx_kl": approx_kl,
+    }
+
+
+def write_metrics(step: int, avg_reward: float, metrics: dict):
+    METRICS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "step": step,
+        "avg_reward": avg_reward,
+        "policy_loss": metrics.get("policy_loss", 0.0),
+        "value_loss": metrics.get("value_loss", 0.0),
+        "kl": metrics.get("approx_kl", 0.0),
+        "entropy": metrics.get("entropy", 0.0),
+        "pass_at_k": 1.0 if avg_reward >= 1.0 else 0.0,
+        "running": True,
+    }
+    with open(METRICS_PATH, "a") as f:
+        f.write(json.dumps(record) + "\n")
+    logger.info(f"Metrics written: {record}")
+
+
+def find_latest_checkpoint() -> tuple[int, Path] | None:
+    """Find the highest-numbered checkpoint directory."""
+    if not CHECKPOINT_DIR.exists():
+        return None
+    latest_iter = -1
+    latest_path = None
+    for entry in CHECKPOINT_DIR.iterdir():
+        if entry.is_dir() and entry.name.startswith("checkpoint-"):
+            try:
+                it = int(entry.name.split("-")[-1])
+            except ValueError:
+                continue
+            if it > latest_iter:
+                latest_iter = it
+                latest_path = entry
+    if latest_path is None:
+        return None
+    return latest_iter, latest_path
+
+
+def load_checkpoint(actor_critic: ActorCritic, tokenizer, checkpoint_path: Path):
+    """Load model, tokenizer, and value head from a checkpoint directory."""
+    logger.info(f"Loading checkpoint from {checkpoint_path}")
+    actor_critic.model = AutoModelForCausalLM.from_pretrained(
+        checkpoint_path,
+        trust_remote_code=True,
+        torch_dtype=torch.float32,
+    )
+    # Re-apply LoRA if the saved model is not already PEFT.
+    if not hasattr(actor_critic.model, "peft_config"):
+        lora_config = LoraConfig(
+            r=8,
+            lora_alpha=16,
+            target_modules=["q_proj", "v_proj"],
+            lora_dropout=0.05,
+            bias="none",
+            task_type="CAUSAL_LM",
+        )
+        actor_critic.model = get_peft_model(actor_critic.model, lora_config)
+    value_head_path = checkpoint_path / "value_head.pt"
+    if value_head_path.exists():
+        actor_critic.value_head.load_state_dict(torch.load(value_head_path, map_location=DEVICE, weights_only=True))
+    tokenizer_loaded = AutoTokenizer.from_pretrained(checkpoint_path, trust_remote_code=True)
+    tokenizer.__dict__.update(tokenizer_loaded.__dict__)
+
+
+def save_checkpoint(actor_critic: ActorCritic, tokenizer, iteration: int):
+    checkpoint_path = CHECKPOINT_DIR / f"checkpoint-{iteration}"
+    checkpoint_path.mkdir(parents=True, exist_ok=True)
+    actor_critic.model.save_pretrained(checkpoint_path)
+    tokenizer.save_pretrained(checkpoint_path)
+    torch.save(actor_critic.value_head.state_dict(), checkpoint_path / "value_head.pt")
+    logger.info(f"Checkpoint saved to {checkpoint_path}")
+
+
+def main():
+    print("=" * 60)
+    print("Code Colosseum PPO Trainer")
+    print("=" * 60)
+    print(f"Model: {MODEL_NAME}")
+    print(f"Arena: {ARENA_ENDPOINT}")
+    print(f"LLM backend: {ARENA_LLM_BACKEND}")
+    print(f"Problems: {PROBLEMS_DIR}")
+
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    actor_critic = ActorCritic(MODEL_NAME).to(DEVICE)
+    optimizer = torch.optim.AdamW(actor_critic.parameters(), lr=LEARNING_RATE)
+
+    latest = find_latest_checkpoint()
+    start_iteration = 1
+    if latest:
+        it, path = latest
+        load_checkpoint(actor_critic, tokenizer, path)
+        start_iteration = it + 1
+        print(f"Resuming from checkpoint-{it}, starting at iteration {start_iteration}")
+
+    dataset = build_dataset()
+    print(f"Dataset: {len(dataset)} problems")
+
+    agent_loop = ColosseumAgentLoop(tokenizer=tokenizer)
+
+    for iteration in range(start_iteration, NUM_ITERATIONS + 1):
+        print()
+        print(f"Iteration {iteration}/{NUM_ITERATIONS}")
+
+        random.shuffle(dataset)
+        actor_critic.eval()
+        outputs = asyncio.run(run_rollouts(agent_loop, dataset))
+
+        batch = postprocess_to_tensors(outputs, tokenizer, tokenizer.pad_token_id)
+        old_logprobs, old_values, advantages, returns = compute_ppo_metrics(
+            actor_critic, batch, tokenizer.pad_token_id
+        )
+
+        avg_reward = batch["rewards"].mean().item()
+        print(f"  Avg reward: {avg_reward:.4f}")
+
+        actor_critic.train()
+        print("PPO updates")
+        for epoch in range(PPO_EPOCHS):
+            metrics = ppo_update(
+                actor_critic,
+                optimizer,
+                batch,
+                old_logprobs,
+                advantages,
+                returns,
+                tokenizer.pad_token_id,
+            )
+            print(
+                f"  epoch {epoch + 1}/{PPO_EPOCHS}: "
+                f"loss={metrics['loss']:.4f}, policy={metrics['policy_loss']:.4f}, "
+                f"value={metrics['value_loss']:.4f}, kl={metrics['approx_kl']:.6f}"
+            )
+
+        write_metrics(iteration, avg_reward, metrics)
+        save_checkpoint(actor_critic, tokenizer, iteration)
+
+    print("=" * 60)
+    print("Training complete!")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    main()

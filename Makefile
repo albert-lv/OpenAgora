@@ -34,6 +34,23 @@ docker-agent:
 docker-swe-agent:
 	docker build -t openagora-swe-agent:latest -f docker/Dockerfile.swe-agent .
 
+.PHONY: docker-cpu-trainer
+docker-cpu-trainer:
+	docker build -t openagora-cpu-trainer:latest -f docker/Dockerfile.cpu-trainer .
+
+.PHONY: docker-code-colosseum-agent
+docker-code-colosseum-agent:
+	docker build -t openagora-code-colosseum-agent:latest -f examples/code-colosseum/agent/Dockerfile.agent .
+
+# Code Colosseum demo
+.PHONY: colosseum-up
+colosseum-up:
+	docker compose -f examples/code-colosseum/docker-compose.yml up --build
+
+.PHONY: colosseum-down
+colosseum-down:
+	docker compose -f examples/code-colosseum/docker-compose.yml down -v
+
 # Python 开发
 .PHONY: sdk-install
 sdk-install:
