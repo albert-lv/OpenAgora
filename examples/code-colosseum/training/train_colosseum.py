@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """
-Code Colosseum PPO training skeleton.
+Code Colosseum GRPO training skeleton.
 
-Adapts the CPU demo trainer to train on the Code Colosseum problem bank.
-Uses mock LLM by default so the skeleton can run end-to-end without GPUs.
+Adapts the CPU demo trainer to train on the Code Colosseum problem bank
+using Group Relative Policy Optimization (GRPO).  For each problem the
+policy samples a group of rollouts; rewards are normalized within the group
+to produce advantages, and the critic / value network is removed.
+
+Uses a mock LLM by default so the skeleton can run end-to-end without GPUs.
 """
 
 import asyncio
@@ -53,19 +57,23 @@ METRICS_PATH = Path(os.environ.get("METRICS_PATH", "/app/data/metrics.jsonl"))
 CHECKPOINT_DIR = Path(os.environ.get("CHECKPOINT_DIR", "/app/checkpoints"))
 
 DEVICE = "cpu"
-BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "2"))
+BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "1"))
 MAX_PROMPT_LEN = int(os.environ.get("MAX_PROMPT_LEN", "64"))
 MAX_RESPONSE_LEN = int(os.environ.get("MAX_RESPONSE_LEN", "128"))
 LEARNING_RATE = float(os.environ.get("LEARNING_RATE", "1e-5"))
-PPO_EPOCHS = int(os.environ.get("PPO_EPOCHS", "2"))
+GRPO_EPOCHS = int(os.environ.get("GRPO_EPOCHS", os.environ.get("PPO_EPOCHS", "1")))
 CLIP_EPS = float(os.environ.get("CLIP_EPS", "0.2"))
-VF_COEF = float(os.environ.get("VF_COEF", "0.5"))
+KL_COEF = float(os.environ.get("KL_COEF", "0.01"))
 ENT_COEF = float(os.environ.get("ENT_COEF", "0.01"))
 MAX_GRAD_NORM = float(os.environ.get("MAX_GRAD_NORM", "1.0"))
 NUM_ITERATIONS = int(os.environ.get("NUM_ITERATIONS", "1"))
+GROUP_SIZE = int(os.environ.get("GROUP_SIZE", "4"))
+REWARD_EPS = float(os.environ.get("REWARD_EPS", "1e-4"))
 
 
-class ActorCritic(nn.Module):
+class ActorModel(nn.Module):
+    """Policy network for GRPO: no value head, only the actor."""
+
     def __init__(self, model_name: str, use_lora: bool = True):
         super().__init__()
         self.model = AutoModelForCausalLM.from_pretrained(
@@ -84,19 +92,14 @@ class ActorCritic(nn.Module):
             )
             self.model = get_peft_model(self.model, lora_config)
             self.model.print_trainable_parameters()
-        hidden_size = self.model.config.hidden_size
-        self.value_head = nn.Linear(hidden_size, 1)
 
     def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor):
         outputs = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
-            output_hidden_states=True,
+            output_hidden_states=False,
         )
-        logits = outputs.logits.to(torch.float32)
-        hidden_states = outputs.hidden_states[-1].to(torch.float32)
-        values = self.value_head(hidden_states).squeeze(-1)
-        return logits, values
+        return outputs.logits.to(torch.float32)
 
 
 class ColosseumAgentLoop(ArenaAgentLoop):
@@ -144,29 +147,42 @@ def build_dataset():
     return records
 
 
-async def run_rollouts(agent_loop: ColosseumAgentLoop, dataset: list[dict]):
+async def run_rollouts(agent_loop: ColosseumAgentLoop, dataset: list[dict], group_size: int):
+    """Sample ``group_size`` rollouts for each problem in the batch."""
     outputs = []
     for sample in dataset[:BATCH_SIZE]:
         idx = sample["index"]
-        logger.info(f"\n--- Problem {idx} ---")
-        out = await agent_loop.run(
-            sampling_params={"temperature": 0.3, "top_p": 0.9},
-            raw_prompt=sample["raw_prompt"],
-            index=idx,
-            extra_info=sample.get("extra_info", {}),
-        )
-        outputs.append(out)
-        print(f"  {idx}: reward={out.reward_score}")
+        logger.info("\n--- Problem %s (group size %d) ---", idx, group_size)
+        for g in range(group_size):
+            # Vary seed per group member so the policy can explore diverse
+            # completions for the same prompt.
+            sampling = {
+                "temperature": 0.7,
+                "top_p": 0.9,
+                "seed": random.randint(1, 1_000_000_000),
+            }
+            out = await agent_loop.run(
+                sampling_params=sampling,
+                raw_prompt=sample["raw_prompt"],
+                index=idx,
+                extra_info=sample.get("extra_info", {}),
+            )
+            outputs.append(out)
+            print(f"  {idx}/{g + 1}: reward={out.reward_score}")
     return outputs
 
 
-def postprocess_to_tensors(outputs: list, tokenizer, pad_token_id: int = 0):
+def postprocess_to_tensors(outputs: list, group_size: int, tokenizer, pad_token_id: int):
+    """Convert rollout outputs to tensors, keeping group membership."""
     batch_prompts = []
     batch_responses = []
     batch_masks = []
     batch_rewards = []
+    batch_group_ids = []
 
-    for out in outputs:
+    pad_token_id = pad_token_id or tokenizer.pad_token_id or 0
+
+    for i, out in enumerate(outputs):
         p_ids = out.prompt_ids[:MAX_PROMPT_LEN]
         r_ids = out.response_ids[:MAX_RESPONSE_LEN]
         mask = out.response_mask[:MAX_RESPONSE_LEN]
@@ -179,12 +195,14 @@ def postprocess_to_tensors(outputs: list, tokenizer, pad_token_id: int = 0):
         batch_responses.append(r_ids)
         batch_masks.append(mask)
         batch_rewards.append(out.reward_score or 0.0)
+        batch_group_ids.append(i // group_size)
 
     return {
         "prompts": torch.tensor(batch_prompts, dtype=torch.long),
         "responses": torch.tensor(batch_responses, dtype=torch.long),
         "response_mask": torch.tensor(batch_masks, dtype=torch.long),
         "rewards": torch.tensor(batch_rewards, dtype=torch.float32),
+        "group_ids": torch.tensor(batch_group_ids, dtype=torch.long),
     }
 
 
@@ -193,37 +211,67 @@ def gather_logprobs(logits: torch.Tensor, tokens: torch.Tensor) -> torch.Tensor:
     return log_probs.gather(2, tokens.unsqueeze(-1)).squeeze(-1)
 
 
-def compute_ppo_metrics(actor_critic: ActorCritic, batch: dict, pad_token_id: int):
+def compute_group_advantages(rewards: torch.Tensor, group_ids: torch.Tensor, eps: float = REWARD_EPS):
+    """Compute group-relative advantages: (r - mean) / (std + eps)."""
+    advantages = torch.zeros_like(rewards)
+    for gid in torch.unique(group_ids, sorted=True):
+        mask = group_ids == gid
+        group_rewards = rewards[mask]
+        mean_r = group_rewards.mean()
+        std_r = group_rewards.std(unbiased=False) + eps
+        advantages[mask] = (group_rewards - mean_r) / std_r
+    return advantages
+
+
+def compute_group_stats(batch: dict) -> list[dict]:
+    """Return per-group reward statistics for logging."""
+    group_ids = batch["group_ids"]
+    rewards = batch["rewards"]
+    stats = []
+    for gid in torch.unique(group_ids, sorted=True):
+        mask = group_ids == gid
+        g = rewards[mask]
+        stats.append(
+            {
+                "group": int(gid.item()),
+                "mean": round(g.mean().item(), 4),
+                "std": round(g.std(unbiased=False).item(), 4),
+                "min": round(g.min().item(), 4),
+                "max": round(g.max().item(), 4),
+            }
+        )
+    return stats
+
+
+def compute_grpo_metrics(actor_model: ActorModel, batch: dict, pad_token_id: int):
+    """Compute old-policy logprobs and group-relative advantages."""
     prompts = batch["prompts"].to(DEVICE)
     responses = batch["responses"].to(DEVICE)
     response_mask = batch["response_mask"].to(DEVICE)
     rewards = batch["rewards"].to(DEVICE)
+    group_ids = batch["group_ids"].to(DEVICE)
 
     full_input_ids = torch.cat([prompts, responses], dim=1)
     attention_mask = (full_input_ids != pad_token_id).long()
 
     with torch.no_grad():
-        logits, values = actor_critic(full_input_ids, attention_mask)
+        logits = actor_model(full_input_ids, attention_mask)
         response_logits = logits[:, MAX_PROMPT_LEN - 1 : MAX_PROMPT_LEN + MAX_RESPONSE_LEN - 1, :]
-        response_values = values[:, MAX_PROMPT_LEN : MAX_PROMPT_LEN + MAX_RESPONSE_LEN]
 
         token_logprobs = gather_logprobs(response_logits, responses)
         seq_logprobs = (token_logprobs * response_mask).sum(dim=1) / (response_mask.sum(dim=1) + 1e-8)
-        seq_values = (response_values * response_mask).sum(dim=1) / (response_mask.sum(dim=1) + 1e-8)
 
-        advantages = rewards - seq_values
-        returns = rewards
+    advantages = compute_group_advantages(rewards, group_ids)
 
-    return seq_logprobs, seq_values, advantages, returns
+    return seq_logprobs, advantages, rewards
 
 
-def ppo_update(
-    actor_critic: ActorCritic,
+def grpo_update(
+    actor_model: ActorModel,
     optimizer: torch.optim.Optimizer,
     batch: dict,
     old_logprobs: torch.Tensor,
     advantages: torch.Tensor,
-    returns: torch.Tensor,
     pad_token_id: int,
 ) -> dict:
     prompts = batch["prompts"].to(DEVICE)
@@ -233,28 +281,30 @@ def ppo_update(
     full_input_ids = torch.cat([prompts, responses], dim=1)
     attention_mask = (full_input_ids != pad_token_id).long()
 
-    logits, values = actor_critic(full_input_ids, attention_mask)
+    logits = actor_model(full_input_ids, attention_mask)
     response_logits = logits[:, MAX_PROMPT_LEN - 1 : MAX_PROMPT_LEN + MAX_RESPONSE_LEN - 1, :]
-    response_values = values[:, MAX_PROMPT_LEN : MAX_PROMPT_LEN + MAX_RESPONSE_LEN]
 
     token_logprobs = gather_logprobs(response_logits, responses)
     new_logprobs = (token_logprobs * response_mask).sum(dim=1) / (response_mask.sum(dim=1) + 1e-8)
-    value_est = (response_values * response_mask).sum(dim=1) / (response_mask.sum(dim=1) + 1e-8)
 
     ratio = torch.exp(new_logprobs - old_logprobs)
     surr1 = ratio * advantages
     surr2 = torch.clamp(ratio, 1 - CLIP_EPS, 1 + CLIP_EPS) * advantages
     policy_loss = -torch.min(surr1, surr2).mean()
 
-    value_loss = F.mse_loss(value_est, returns)
-    entropy = -(torch.exp(token_logprobs) * token_logprobs * response_mask).sum(dim=1) / (response_mask.sum(dim=1) + 1e-8)
+    # Approximate KL divergence to the old (reference) policy.
+    kl_loss = (old_logprobs - new_logprobs).mean()
+
+    entropy = -(torch.exp(token_logprobs) * token_logprobs * response_mask).sum(dim=1) / (
+        response_mask.sum(dim=1) + 1e-8
+    )
     entropy_loss = -entropy.mean()
 
-    loss = policy_loss + VF_COEF * value_loss + ENT_COEF * entropy_loss
+    loss = policy_loss + KL_COEF * kl_loss + ENT_COEF * entropy_loss
 
     optimizer.zero_grad()
     loss.backward()
-    trainable_params = [p for p in actor_critic.parameters() if p.requires_grad]
+    trainable_params = [p for p in actor_model.parameters() if p.requires_grad]
     nn.utils.clip_grad_norm_(trainable_params, MAX_GRAD_NORM)
     optimizer.step()
 
@@ -262,27 +312,28 @@ def ppo_update(
     return {
         "loss": loss.item(),
         "policy_loss": policy_loss.item(),
-        "value_loss": value_loss.item(),
+        "kl_loss": kl_loss.item(),
         "entropy": entropy.mean().item(),
         "approx_kl": approx_kl,
     }
 
 
-def write_metrics(step: int, avg_reward: float, metrics: dict):
+def write_metrics(step: int, avg_reward: float, group_stats: list[dict], metrics: dict):
     METRICS_PATH.parent.mkdir(parents=True, exist_ok=True)
     record = {
         "step": step,
         "avg_reward": avg_reward,
         "policy_loss": metrics.get("policy_loss", 0.0),
-        "value_loss": metrics.get("value_loss", 0.0),
+        "kl_loss": metrics.get("kl_loss", 0.0),
         "kl": metrics.get("approx_kl", 0.0),
         "entropy": metrics.get("entropy", 0.0),
+        "group_stats": group_stats,
         "pass_at_k": 1.0 if avg_reward >= 1.0 else 0.0,
         "running": True,
     }
     with open(METRICS_PATH, "a") as f:
         f.write(json.dumps(record) + "\n")
-    logger.info(f"Metrics written: {record}")
+    logger.info("Metrics written: %s", record)
 
 
 def find_latest_checkpoint() -> tuple[int, Path] | None:
@@ -305,16 +356,16 @@ def find_latest_checkpoint() -> tuple[int, Path] | None:
     return latest_iter, latest_path
 
 
-def load_checkpoint(actor_critic: ActorCritic, tokenizer, checkpoint_path: Path):
-    """Load model, tokenizer, and value head from a checkpoint directory."""
-    logger.info(f"Loading checkpoint from {checkpoint_path}")
-    actor_critic.model = AutoModelForCausalLM.from_pretrained(
+def load_checkpoint(actor_model: ActorModel, tokenizer, checkpoint_path: Path):
+    """Load actor and tokenizer from a checkpoint directory."""
+    logger.info("Loading checkpoint from %s", checkpoint_path)
+    actor_model.model = AutoModelForCausalLM.from_pretrained(
         checkpoint_path,
         trust_remote_code=True,
         torch_dtype=torch.float32,
     )
     # Re-apply LoRA if the saved model is not already PEFT.
-    if not hasattr(actor_critic.model, "peft_config"):
+    if not hasattr(actor_model.model, "peft_config"):
         lora_config = LoraConfig(
             r=8,
             lora_alpha=16,
@@ -323,44 +374,42 @@ def load_checkpoint(actor_critic: ActorCritic, tokenizer, checkpoint_path: Path)
             bias="none",
             task_type="CAUSAL_LM",
         )
-        actor_critic.model = get_peft_model(actor_critic.model, lora_config)
-    value_head_path = checkpoint_path / "value_head.pt"
-    if value_head_path.exists():
-        actor_critic.value_head.load_state_dict(torch.load(value_head_path, map_location=DEVICE, weights_only=True))
+        actor_model.model = get_peft_model(actor_model.model, lora_config)
     tokenizer_loaded = AutoTokenizer.from_pretrained(checkpoint_path, trust_remote_code=True)
     tokenizer.__dict__.update(tokenizer_loaded.__dict__)
 
 
-def save_checkpoint(actor_critic: ActorCritic, tokenizer, iteration: int):
+def save_checkpoint(actor_model: ActorModel, tokenizer, iteration: int):
     checkpoint_path = CHECKPOINT_DIR / f"checkpoint-{iteration}"
     checkpoint_path.mkdir(parents=True, exist_ok=True)
-    actor_critic.model.save_pretrained(checkpoint_path)
+    actor_model.model.save_pretrained(checkpoint_path)
     tokenizer.save_pretrained(checkpoint_path)
-    torch.save(actor_critic.value_head.state_dict(), checkpoint_path / "value_head.pt")
-    logger.info(f"Checkpoint saved to {checkpoint_path}")
+    logger.info("Checkpoint saved to %s", checkpoint_path)
 
 
 def main():
     print("=" * 60)
-    print("Code Colosseum PPO Trainer")
+    print("Code Colosseum GRPO Trainer")
     print("=" * 60)
     print(f"Model: {MODEL_NAME}")
     print(f"Arena: {ARENA_ENDPOINT}")
     print(f"LLM backend: {ARENA_LLM_BACKEND}")
     print(f"Problems: {PROBLEMS_DIR}")
+    print(f"Group size: {GROUP_SIZE}")
+    print(f"GRPO epochs: {GRPO_EPOCHS}")
 
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    actor_critic = ActorCritic(MODEL_NAME).to(DEVICE)
-    optimizer = torch.optim.AdamW(actor_critic.parameters(), lr=LEARNING_RATE)
+    actor_model = ActorModel(MODEL_NAME).to(DEVICE)
+    optimizer = torch.optim.AdamW(actor_model.parameters(), lr=LEARNING_RATE)
 
     latest = find_latest_checkpoint()
     start_iteration = 1
     if latest:
         it, path = latest
-        load_checkpoint(actor_critic, tokenizer, path)
+        load_checkpoint(actor_model, tokenizer, path)
         start_iteration = it + 1
         print(f"Resuming from checkpoint-{it}, starting at iteration {start_iteration}")
 
@@ -374,37 +423,39 @@ def main():
         print(f"Iteration {iteration}/{NUM_ITERATIONS}")
 
         random.shuffle(dataset)
-        actor_critic.eval()
-        outputs = asyncio.run(run_rollouts(agent_loop, dataset))
+        actor_model.eval()
+        outputs = asyncio.run(run_rollouts(agent_loop, dataset, GROUP_SIZE))
 
-        batch = postprocess_to_tensors(outputs, tokenizer, tokenizer.pad_token_id)
-        old_logprobs, old_values, advantages, returns = compute_ppo_metrics(
-            actor_critic, batch, tokenizer.pad_token_id
+        batch = postprocess_to_tensors(outputs, GROUP_SIZE, tokenizer, tokenizer.pad_token_id)
+        old_logprobs, advantages, returns = compute_grpo_metrics(
+            actor_model, batch, tokenizer.pad_token_id
         )
 
         avg_reward = batch["rewards"].mean().item()
+        group_stats = compute_group_stats(batch)
         print(f"  Avg reward: {avg_reward:.4f}")
+        print(f"  Group stats: {group_stats}")
 
-        actor_critic.train()
-        print("PPO updates")
-        for epoch in range(PPO_EPOCHS):
-            metrics = ppo_update(
-                actor_critic,
+        actor_model.train()
+        print("GRPO updates")
+        for epoch in range(GRPO_EPOCHS):
+            metrics = grpo_update(
+                actor_model,
                 optimizer,
                 batch,
                 old_logprobs,
                 advantages,
-                returns,
                 tokenizer.pad_token_id,
             )
             print(
-                f"  epoch {epoch + 1}/{PPO_EPOCHS}: "
+                f"  epoch {epoch + 1}/{GRPO_EPOCHS}: "
                 f"loss={metrics['loss']:.4f}, policy={metrics['policy_loss']:.4f}, "
-                f"value={metrics['value_loss']:.4f}, kl={metrics['approx_kl']:.6f}"
+                f"kl={metrics['kl_loss']:.4f}, entropy={metrics['entropy']:.4f}, "
+                f"approx_kl={metrics['approx_kl']:.6f}"
             )
 
-        write_metrics(iteration, avg_reward, metrics)
-        save_checkpoint(actor_critic, tokenizer, iteration)
+        write_metrics(iteration, avg_reward, group_stats, metrics)
+        save_checkpoint(actor_model, tokenizer, iteration)
 
     print("=" * 60)
     print("Training complete!")
