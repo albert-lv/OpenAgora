@@ -1,0 +1,114 @@
+syntax = "proto3";
+package openagora.v1;
+option go_package = "github.com/albert-lv/OpenAgora/go/proto/openagora/v1";
+
+import "google/protobuf/timestamp.proto";
+import "openagora/v1/trajectory.proto";
+
+service ArenaService {
+  rpc CreateRollout(CreateRolloutRequest) returns (CreateRolloutResponse);
+  rpc GetRollout(GetRolloutRequest) returns (Rollout);
+  rpc StopRollout(StopRolloutRequest) returns (StopRolloutResponse);
+  rpc ListRollouts(ListRolloutsRequest) returns (ListRolloutsResponse);
+  rpc StreamTrajectory(StreamTrajectoryRequest) returns (stream TrajectoryStep);
+  rpc GetTrajectory(GetTrajectoryRequest) returns (Trajectory);
+}
+
+message CreateRolloutRequest {
+  string task_id = 1;
+  SandboxConfig sandbox = 2;
+  SamplingConfig sampling = 3;
+  VerifyConfig verify = 4;
+  string llm_backend = 5;
+}
+
+message CreateRolloutResponse {
+  string rollout_id = 1;
+  string proxy_url = 2;   // e.g. "http://127.0.0.1:12345/v1"
+  string token = 3;       // Authorization Bearer token for the proxy
+}
+
+message GetRolloutRequest {
+  string rollout_id = 1;
+}
+
+message StopRolloutRequest {
+  string rollout_id = 1;
+}
+
+message StopRolloutResponse {}
+
+message ListRolloutsRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+}
+
+message ListRolloutsResponse {
+  repeated Rollout rollouts = 1;
+}
+
+message Rollout {
+  string rollout_id = 1;
+  string task_id = 2;
+  string status = 3;  // "pending", "running", "success", "failed", "stopped"
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp finished_at = 5;
+  float reward = 6;
+  VerificationReport verification_report = 7;
+}
+
+message StreamTrajectoryRequest {
+  string rollout_id = 1;
+}
+
+message GetTrajectoryRequest {
+  string rollout_id = 1;
+}
+
+message Trajectory {
+  repeated TrajectoryStep steps = 1;
+}
+
+message SandboxConfig {
+  string image = 1;
+  string memory = 2;
+  double cpus = 3;
+  map<string, string> env_vars = 4;
+  bytes task_file = 5;
+  int32 timeout_seconds = 6;
+}
+
+message VerifyConfig {
+  // Legacy fields (kept for backward compatibility)
+  string command = 1;
+  string log_parser = 2;
+  repeated string pass_to_pass = 3;
+  repeated string fail_to_pass = 4;
+
+  // SWE-bench-style structured verification spec
+  string language = 5;            // e.g. "python", "javascript", "go"
+  string framework = 6;           // e.g. "pytest", "jest", "go test"
+  string install_command = 7;     // environment setup before baseline
+  string baseline_command = 8;    // tests on the buggy checkout
+  string patch_command = 9;       // tests after the agent patch
+  int32 timeout_seconds = 10;     // per-command timeout
+  string working_directory = 11;  // e.g. "/testbed"
+}
+
+message TestCaseResult {
+  string test_id = 1;
+  bool baseline_passed = 2;
+  bool patch_passed = 3;
+  string category = 4;  // "F2F", "F2P", "P2P", "P2F"
+}
+
+message VerificationReport {
+  float reward = 1;
+  int32 f2p_count = 2;
+  int32 p2p_count = 3;
+  int32 f2f_count = 4;
+  int32 p2f_count = 5;
+  repeated TestCaseResult test_cases = 6;
+  string stdout = 7;
+  string stderr = 8;
+}

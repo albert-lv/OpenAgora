@@ -1,0 +1,10 @@
+# Agent loop registration for veRL TransferQueue Ray workers.
+#
+# In TQ mode, AgentLoopWorkerTQ runs as an independent Ray actor and does not
+# inherit the main process's Python imports. The arena_agent loop must therefore
+# be registered via this YAML file and pointed to with:
+#
+#   actor_rollout_ref.rollout.agent.agent_loop_config_path=./arena_agent_loop.yaml
+#
+- name: arena_agent
+  _target_: openagora_verl.agent_loop.ArenaAgentLoop

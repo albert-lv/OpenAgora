@@ -1,0 +1,61 @@
+services:
+  mock-llm:
+    image: python:3.12-slim
+    command: ["python3", "-u", "/app/mock_llm_add.py", "--port", "8000"]
+    volumes:
+      - ./mock_llm_add.py:/app/mock_llm_add.py:ro
+    ports:
+      - "8000:8000"
+    networks:
+      - arena-cpu-demo
+
+  arena-server:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.server
+    environment:
+      - ARENA_PROXY_ADVERTISE_HOST=arena-server
+      # Ensure temp sandbox dirs are created on the host side so Docker daemon
+      # can bind-mount them into agent containers. The container path must match
+      # the host path because Docker daemon resolves bind-mount sources on the host.
+      - TMPDIR=/Users/albert/arena-tmp
+      # Place agent sandboxes on the same Docker network so they can reach the proxy.
+      - ARENA_DOCKER_NETWORK=arena-cpu-demo
+    ports:
+      - "9090:9090"
+      - "9091:9091"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /Users/albert/arena-tmp:/Users/albert/arena-tmp
+    networks:
+      - arena-cpu-demo
+    depends_on:
+      - mock-llm
+
+  cpu-trainer:
+    image: openagora-cpu-trainer:latest
+    environment:
+      - ARENA_ENDPOINT=arena-server:9090
+      - ARENA_AGENT_IMAGE=openagora-agent-minimal:latest
+      - ARENA_LLM_BACKEND=http://mock-llm:8000/v1
+      - ARENA_VERIFY_COMMAND=cd /sandbox && python -c 'from solution import add; assert add(2,3)==5; assert add(-1,1)==0; print("PASS")'
+      - NUM_ITERATIONS=1
+      - PPO_EPOCHS=2
+      - BATCH_SIZE=2
+      - MAX_PROMPT_LEN=32
+      - MAX_RESPONSE_LEN=64
+      - HF_HOME=/app/.cache/huggingface
+      - TRANSFORMERS_OFFLINE=0
+    volumes:
+      - ~/.cache/huggingface:/app/.cache/huggingface
+      - ./checkpoints:/app/checkpoints
+    networks:
+      - arena-cpu-demo
+    depends_on:
+      - arena-server
+      - mock-llm
+
+networks:
+  arena-cpu-demo:
+    driver: bridge
+    name: arena-cpu-demo

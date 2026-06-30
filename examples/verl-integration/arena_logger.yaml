@@ -1,0 +1,23 @@
+# Example experiment-tracking logger configuration for ArenaAgentLoop.
+#
+# Pass this to veRL via:
+#   actor_rollout_ref.rollout.agent.agent_loop_config_path=arena_agent_loop.yaml
+#
+# Or inline the logger in the same config:
+#
+#   logger:
+#     _target_: openagora_verl.logger.TensorBoardLogger
+#     log_dir: ./runs/arena
+#     prefix: arena
+
+# TensorBoard
+- _target_: openagora_verl.logger.TensorBoardLogger
+  log_dir: ./runs/arena
+  prefix: arena
+
+# Weights & Biases (uncomment if wandb is installed and initialized)
+# - _target_: openagora_verl.logger.WandBLogger
+#   prefix: arena
+
+# Console debug logger (uncomment for quick local debugging)
+# - _target_: openagora_verl.logger.ConsoleLogger

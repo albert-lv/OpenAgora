@@ -1,0 +1,55 @@
+<!-- Paste this entire block into openagora-website/index.html, e.g. right after the existing #demo section -->
+<section id="relationship-chat" class="section section-light">
+  <div class="container">
+    <div class="section-header">
+      <h2>Relationship Chat RL Demo</h2>
+      <p>Watch a small model learn how to talk to your partner without stepping on landmines</p>
+    </div>
+
+    <div class="demo-split" style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; align-items: center; margin-bottom: 2rem;">
+      <div class="demo-visual" style="border-radius: 12px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.15);">
+        <img src="images/relationship-chat-dashboard.png" alt="Arena Dashboard showing verify success rate" style="width: 100%; display: block;">
+      </div>
+      <div class="demo-desc">
+        <h3 style="margin-top: 0;">Scenario: “You forgot our anniversary again”</h3>
+        <p>
+          We turned the classic “how to chat with your girlfriend/wife” problem into a reinforcement-learning task.
+          The model generates a reply; a hidden rubric scores it on empathy and penalizes dismissive phrases like
+          “what's the big deal” or “calm down”. PPO on a CPU-only laptop pushes the verify success rate up over successive iterations.
+        </p>
+        <ul style="line-height: 1.8; padding-left: 1.2rem;">
+          <li>🧠 <strong>Base model:</strong> Qwen/Qwen3.5-0.8B + LoRA</li>
+          <li>🏛️ <strong>Infra:</strong> Arena rollout / verify / trajectory plane</li>
+          <li>📈 <strong>Dashboard:</strong> live verify-success-rate trend</li>
+          <li>🦙 <strong>Deploy:</strong> import the LoRA adapter directly into Ollama</li>
+        </ul>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2rem;">
+      <div style="border-radius: 12px; overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,0.12);">
+        <img src="images/relationship-chat-rollouts.png" alt="Arena Dashboard Rollouts tab" style="width: 100%; display: block;">
+      </div>
+      <div style="border-radius: 12px; overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,0.12);">
+        <img src="images/relationship-chat-token-stats.png" alt="Arena Dashboard Token Stats tab" style="width: 100%; display: block;">
+      </div>
+    </div>
+
+    <div style="max-width: 800px; margin: 0 auto 2rem; border-radius: 12px; overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,0.12);">
+      <img src="images/relationship-chat-trend.svg" alt="Verify success rate rising" style="width: 100%; display: block;">
+    </div>
+
+    <div class="demo-cta" style="text-align: center;">
+      <div class="code-block code-block-small" style="max-width: 700px; margin: 0 auto 1rem;">
+        <div class="code-header">
+          <span>Run the demo</span>
+        </div>
+        <pre><code class="language-bash">git clone https://github.com/albert-lv/OpenAgora.git
+cd OpenAgora/examples/relationship-chat-rl
+docker compose up --build</code></pre>
+      </div>
+      <p class="demo-note">Open <a href="http://localhost:9091" target="_blank">http://localhost:9091</a> and watch the Verify Stats tab.</p>
+      <a href="https://github.com/albert-lv/OpenAgora/tree/main/examples/relationship-chat-rl" class="btn btn-primary" target="_blank" style="margin-top: 1rem;">View Source</a>
+    </div>
+  </div>
+</section>

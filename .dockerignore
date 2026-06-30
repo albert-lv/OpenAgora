@@ -1,0 +1,25 @@
+# Python virtual environments
+**/.venv/
+**/venv/
+
+# Node modules
+**/node_modules/
+
+# Build outputs
+**/dist/
+**/build/
+**/__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# Git
+.git/
+.gitignore
+
+# OS
+.DS_Store

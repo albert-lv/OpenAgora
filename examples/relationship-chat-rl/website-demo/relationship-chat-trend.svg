@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 320" width="800" height="320">
+  <defs>
+    <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#10b981" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#10b981" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="100%" height="100%" fill="#0f172a" rx="12"/>
+  <!-- grid -->
+  <g stroke="#334155" stroke-width="1">
+    <line x1="60" y1="40" x2="60" y2="270"/>
+    <line x1="60" y1="270" x2="760" y2="270"/>
+    <line x1="60" y1="212.5" x2="760" y2="212.5" stroke-dasharray="4"/>
+    <line x1="60" y1="155.0" x2="760" y2="155.0" stroke-dasharray="4"/>
+    <line x1="60" y1="97.5" x2="760" y2="97.5" stroke-dasharray="4"/>
+  </g>
+  <!-- area -->
+  <polygon points="60.0,270 60.0,212.5 200.0,173.4 340.0,143.5 480.0,113.6 620.0,90.6 760.0,67.6 760.0,270" fill="url(#areaGrad)"/>
+  <!-- line -->
+  <polyline points="60.0,212.5 200.0,173.4 340.0,143.5 480.0,113.6 620.0,90.6 760.0,67.6" fill="none" stroke="#10b981" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- points -->
+  <g fill="#10b981" stroke="#0f172a" stroke-width="2">
+    <circle cx="60.0" cy="212.5" r="6"/><circle cx="200.0" cy="173.4" r="6"/><circle cx="340.0" cy="143.5" r="6"/><circle cx="480.0" cy="113.6" r="6"/><circle cx="620.0" cy="90.6" r="6"/><circle cx="760.0" cy="67.6" r="6"/>
+  </g>
+  <!-- labels -->
+  <g font-family="Inter, sans-serif" font-size="13" fill="#94a3b8" text-anchor="middle">
+    <text x="60.0" y="292">1</text><text x="200.0" y="292">2</text><text x="340.0" y="292">3</text><text x="480.0" y="292">4</text><text x="620.0" y="292">5</text><text x="760.0" y="292">6</text>
+    <text x="400.0" y="308" fill="#cbd5e1" font-size="14" font-weight="600">PPO Iteration</text>
+  </g>
+  <g font-family="Inter, sans-serif" font-size="12" fill="#94a3b8" text-anchor="end">
+    <text x="50" y="275">0%</text>
+    <text x="50" y="217.5">25%</text>
+    <text x="50" y="160.0">50%</text>
+    <text x="50" y="102.5">75%</text>
+    <text x="50" y="45">100%</text>
+    <text x="20" y="160.0" transform="rotate(-90 20 160.0)" fill="#cbd5e1" font-size="14" font-weight="600">Verify Success Rate</text>
+  </g>
+  <text x="400.0" y="28" font-family="Inter, sans-serif" font-size="18" font-weight="700" fill="#f8fafc" text-anchor="middle">RL Training: Verify Success Rate Rising</text>
+</svg>

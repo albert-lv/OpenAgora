@@ -1,0 +1,131 @@
+version: "3.8"
+
+# Arena + vLLM/SGLang optional inference backend.
+#
+# This compose file is a drop-in replacement for docker-compose.yml.
+# It replaces the Ollama service with a vLLM OpenAI-compatible server.
+#
+# Quick start:
+#   export VLLM_MODEL=Qwen/Qwen3.5-0.8B
+#   export VLLM_SERVED_MODEL_NAME=qwen3.5:0.8b
+#   docker compose -f examples/verl-integration/docker-compose.vllm.yml up --build
+#
+# Notes:
+#   - vLLM requires Linux and preferably NVIDIA GPUs. On macOS, run this on a
+#     Linux host or inside a VM with GPU passthrough.
+#   - The trainer service mounts host HuggingFace cache so the same model can
+#     be used for both inference (vLLM) and training (Transformers).
+#   - If you prefer SGLang, replace the vllm service image with
+#     lmsysorg/sglang:latest and update ARENA_LLM_BACKEND to http://vllm:30000/v1.
+
+services:
+  # ------------------------------------------------------------------
+  # vLLM — OpenAI-compatible inference server
+  # ------------------------------------------------------------------
+  vllm:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.vllm
+    container_name: openagora-vllm
+    command: >
+      --model ${VLLM_MODEL:-Qwen/Qwen3.5-0.8B}
+      --served-model-name ${VLLM_SERVED_MODEL_NAME:-qwen3.5:0.8b}
+      --host 0.0.0.0
+      --port 8000
+      --trust-remote-code
+      --max-model-len 4096
+      --gpu-memory-utilization ${VLLM_GPU_UTIL:-0.85}
+    volumes:
+      - huggingface-cache:/root/.cache/huggingface
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+    networks:
+      - openagora-net
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # ------------------------------------------------------------------
+  # Arena Server — manages sandbox lifecycle, proxy, trajectory
+  # ------------------------------------------------------------------
+  openagora-server:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.server
+    container_name: openagora-server
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "9090:9090"
+      - "9091:9091"
+    environment:
+      - PROXY_ADVERTISE_HOST=host.docker.internal
+    depends_on:
+      vllm:
+        condition: service_started
+    networks:
+      - openagora-net
+
+  # ------------------------------------------------------------------
+  # Build agent image locally so openagora-server can spawn it via host docker
+  # ------------------------------------------------------------------
+  agent-builder:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.demo-agent
+    image: openagora-demo-agent:latest
+    container_name: openagora-agent-builder
+    entrypoint: ["sh", "-c", "echo 'Agent image built'"]
+
+  # ------------------------------------------------------------------
+  # CPU Trainer — veRL + ArenaAgentLoop, pure CPU
+  # ------------------------------------------------------------------
+  trainer:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.cpu-trainer
+    container_name: openagora-trainer
+    environment:
+      - MODEL_NAME=${VLLM_MODEL:-Qwen/Qwen3.5-0.8B}
+      - DATASET_PATH=/app/data/demo_dataset.parquet
+      - ARENA_ENDPOINT=openagora-server:9090
+      - ARENA_AGENT_IMAGE=openagora-demo-agent:latest
+      - ARENA_LLM_BACKEND=http://vllm:8000/v1
+      - ARENA_VERIFY_COMMAND=cd /sandbox && python -c "from solution import add; assert add(2,3)==5; print('PASS')"
+      - HF_HOME=/app/.cache/huggingface
+      - TRANSFORMERS_OFFLINE=0
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - huggingface-cache:/app/.cache/huggingface
+      - ./data:/app/data
+    depends_on:
+      vllm:
+        condition: service_healthy
+      openagora-server:
+        condition: service_started
+      agent-builder:
+        condition: service_completed_successfully
+    networks:
+      - openagora-net
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4G
+
+volumes:
+  huggingface-cache:
+
+networks:
+  openagora-net:
+    driver: bridge

@@ -1,0 +1,49 @@
+syntax = "proto3";
+package openagora.v1;
+option go_package = "github.com/albert-lv/OpenAgora/go/proto/openagora/v1";
+
+import "google/protobuf/timestamp.proto";
+
+message TrajectoryStep {
+  string rollout_id = 1;
+  int32 step_id = 2;
+  google.protobuf.Timestamp ts = 3;
+
+  LLMRequest request = 4;
+  LLMResponse response = 5;
+  repeated Reward rewards = 6;
+  map<string, string> metadata = 7;
+}
+
+message LLMRequest {
+  string endpoint = 1;
+  string model = 2;
+  bytes messages_json = 3;
+  bytes tools_json = 4;
+  SamplingConfig sampling = 5;
+}
+
+message LLMResponse {
+  bytes choices_json = 1;
+  Usage usage = 2;
+  bytes logprobs_json = 3;
+}
+
+message Reward {
+  string type = 1;
+  float value = 2;
+  string source = 3;
+  bytes detail_json = 4;
+}
+
+message Usage {
+  int32 prompt_tokens = 1;
+  int32 completion_tokens = 2;
+}
+
+message SamplingConfig {
+  float temperature = 1;
+  float top_p = 2;
+  int64 seed = 3;
+  int32 max_tokens_budget = 4;
+}

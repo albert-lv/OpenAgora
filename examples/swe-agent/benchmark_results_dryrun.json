@@ -1,0 +1,42 @@
+[
+  {
+    "instance_id": "pallets__flask-4045",
+    "status": "prepared",
+    "sandbox_image": "swebench/sweb.eval.x86_64.pallets_1776_flask-4045:latest",
+    "test_command": "bash -lc 'source /opt/miniconda3/bin/activate && conda activate testbed && cd /testbed && pytest -x tests/test_blueprints.py::test_dotted_name_not_allowed tests/test_blueprints.py::test_route_decorator_custom_endpoint_with_dots'",
+    "fail_to_pass_count": 2,
+    "elapsed": 9.097395896911621
+  },
+  {
+    "instance_id": "django__django-11039",
+    "status": "prepared",
+    "sandbox_image": "swebench/sweb.eval.x86_64.django_1776_django-11039:latest",
+    "test_command": "bash -lc 'source /opt/miniconda3/bin/activate && conda activate testbed && cd /testbed && pytest -x '\"'\"'test_sqlmigrate_for_non_transactional_databases (migrations.test_commands.MigrateTests)'\"'\"''",
+    "fail_to_pass_count": 1,
+    "elapsed": 10.054958820343018
+  },
+  {
+    "instance_id": "sympy__sympy-12236",
+    "status": "prepared",
+    "sandbox_image": "swebench/sweb.eval.x86_64.sympy_1776_sympy-12236:latest",
+    "test_command": "bash -lc 'source /opt/miniconda3/bin/activate && conda activate testbed && cd /testbed && pytest -x test_div'",
+    "fail_to_pass_count": 1,
+    "elapsed": 7.7055089473724365
+  },
+  {
+    "instance_id": "scikit-learn__scikit-learn-10949",
+    "status": "prepared",
+    "sandbox_image": "swebench/sweb.eval.x86_64.scikit-learn_1776_scikit-learn-10949:latest",
+    "test_command": "bash -lc 'source /opt/miniconda3/bin/activate && conda activate testbed && cd /testbed && pytest -x sklearn/utils/tests/test_validation.py::test_check_dataframe_warns_on_dtype'",
+    "fail_to_pass_count": 1,
+    "elapsed": 8.082769870758057
+  },
+  {
+    "instance_id": "pytest-dev__pytest-5103",
+    "status": "prepared",
+    "sandbox_image": "swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-5103:latest",
+    "test_command": "bash -lc 'source /opt/miniconda3/bin/activate && conda activate testbed && cd /testbed && pytest -x testing/test_assertrewrite.py::TestAssertionRewrite::test_unroll_expression'",
+    "fail_to_pass_count": 1,
+    "elapsed": 9.18782901763916
+  }
+]
