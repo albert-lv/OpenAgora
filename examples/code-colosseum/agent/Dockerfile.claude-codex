@@ -1,5 +1,5 @@
 # Shared image for Claude Code and OpenAI Codex LLM backends.
-# Two services are spawned from this image with MODEL_PROVIDER=claude or codex.
+# Both services are spawned from this image with MODEL_PROVIDER=claude or codex.
 # Build context: repo root.
 FROM node:20-slim
 
@@ -24,6 +24,8 @@ COPY --chown=agent:agent examples/code-colosseum/agent/requirements.claude-codex
 RUN pip3 install --break-system-packages --user -r /app/requirements.txt
 
 ENV MODEL_PROVIDER=claude
+ENV ANTHROPIC_BASE_URL=https://api.kimi.com/coding/
+ENV OPENAI_BASE_URL=https://api.kimi.com/coding/v1
 ENV PATH="/home/agent/.local/bin:${PATH}"
 EXPOSE 8000
 

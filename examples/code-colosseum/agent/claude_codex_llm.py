@@ -32,11 +32,16 @@ def build_prompt(messages: list[dict[str, Any]]) -> str:
 
 
 def call_claude(prompt: str) -> str:
-    """Call Claude Code CLI in non-interactive mode.
+    """Call Claude Code CLI in non-interactive mode via Kimi Code API.
 
-    --bare forces Anthropic auth to come from ANTHROPIC_API_KEY only,
-    avoiding interactive login.
+    --bare forces auth to come from ANTHROPIC_API_KEY only,
+    avoiding interactive login.  ANTHROPIC_BASE_URL is set to Kimi Code's
+    Anthropic-compatible endpoint so the underlying LLM calls hit Kimi.
     """
+    env = os.environ.copy()
+    env["ANTHROPIC_BASE_URL"] = os.environ.get(
+        "ANTHROPIC_BASE_URL", "https://api.kimi.com/coding/"
+    )
     result = subprocess.run(
         [
             "claude",
@@ -48,12 +53,21 @@ def call_claude(prompt: str) -> str:
         capture_output=True,
         text=True,
         timeout=120,
+        env=env,
     )
     return result.stdout or result.stderr
 
 
 def call_codex(prompt: str) -> str:
-    """Call OpenAI Codex CLI in non-interactive mode."""
+    """Call OpenAI Codex CLI in non-interactive mode via Kimi Code API.
+
+    OPENAI_BASE_URL is set to Kimi Code's OpenAI-compatible endpoint
+    so the underlying LLM calls hit Kimi.
+    """
+    env = os.environ.copy()
+    env["OPENAI_BASE_URL"] = os.environ.get(
+        "OPENAI_BASE_URL", "https://api.kimi.com/coding/v1"
+    )
     result = subprocess.run(
         [
             "codex",
@@ -65,6 +79,7 @@ def call_codex(prompt: str) -> str:
         text=True,
         input="",
         timeout=120,
+        env=env,
     )
     return result.stdout or result.stderr
 

@@ -4,8 +4,10 @@ import type { Problem } from '../types'
 
 const AGENT_TYPES = [
   { value: 'mock', label: 'Mock LLM' },
-  { value: 'claude', label: 'Claude Code' },
-  { value: 'codex', label: 'OpenAI Codex' },
+  { value: 'claude', label: 'Claude Code (Kimi)' },
+  { value: 'codex', label: 'OpenAI Codex (Kimi)' },
+  { value: 'opencode', label: 'OpenCode (Kimi)' },
+  { value: 'kimi', label: 'Kimi Code CLI' },
 ]
 
 interface Props {

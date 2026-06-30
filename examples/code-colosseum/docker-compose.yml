@@ -3,6 +3,10 @@
 #   docker compose -f examples/code-colosseum/docker-compose.yml up --build
 # Then open http://localhost:3000
 #
+# All three coding-agent backends (Claude Code, Codex, OpenCode) route their
+# underlying LLM calls through the Kimi Code API.  Set KIMI_API_KEY before
+# launching.
+#
 # By default a deterministic mock LLM is used as the rollout backend so the
 # demo runs end-to-end on CPU.  To use the trainer's live policy instead,
 # remove the mock-llm service and point ARENA_LLM_BACKEND to http://trainer:8000/v1.
@@ -20,25 +24,53 @@ services:
     networks:
       - colosseum
 
-  # LLM backends that turn Claude Code / OpenAI Codex CLIs into
-  # OpenAI-compatible endpoints for the standard Code Colosseum agent.
+  # Claude Code backend — LLM calls are forwarded to Kimi Code API via the
+  # Anthropic-compatible endpoint.
   claude-llm:
     build:
       context: ../..
       dockerfile: examples/code-colosseum/agent/Dockerfile.claude-codex
     environment:
       - MODEL_PROVIDER=claude
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ANTHROPIC_API_KEY=${KIMI_API_KEY:-}
+      - ANTHROPIC_BASE_URL=https://api.kimi.com/coding/
     networks:
       - colosseum
 
+  # OpenAI Codex backend — LLM calls are forwarded to Kimi Code API via the
+  # OpenAI-compatible endpoint.
   codex-llm:
     build:
       context: ../..
       dockerfile: examples/code-colosseum/agent/Dockerfile.claude-codex
     environment:
       - MODEL_PROVIDER=codex
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_API_KEY=${KIMI_API_KEY:-}
+      - OPENAI_BASE_URL=https://api.kimi.com/coding/v1
+    networks:
+      - colosseum
+
+  # OpenCode backend — proxies to Kimi Code API (OpenAI-compatible endpoint).
+  opencode-llm:
+    build:
+      context: ../..
+      dockerfile: examples/code-colosseum/agent/Dockerfile.opencode
+    environment:
+      - KIMI_API_KEY=${KIMI_API_KEY:-}
+      - KIMI_BASE_URL=https://api.kimi.com/coding/v1
+      - KIMI_MODEL=kimi-for-coding
+    networks:
+      - colosseum
+
+  # Kimi Code CLI backend — wraps the native Kimi CLI in non-interactive mode.
+  # Authentication is handled by the CLI itself (OAuth via /login or API key).
+  kimi-llm:
+    build:
+      context: ../..
+      dockerfile: examples/code-colosseum/agent/Dockerfile.kimi
+    environment:
+      - KIMI_API_KEY=${KIMI_API_KEY:-}
+      - KIMI_TIMEOUT=120
     networks:
       - colosseum
 
@@ -66,6 +98,8 @@ services:
       - ARENA_MOCK_LLM_BACKEND=http://mock-llm:8000/v1
       - ARENA_CLAUDE_LLM_BACKEND=http://claude-llm:8000/v1
       - ARENA_CODEX_LLM_BACKEND=http://codex-llm:8000/v1
+      - ARENA_OPENCODE_LLM_BACKEND=http://opencode-llm:8000/v1
+      - ARENA_KIMI_LLM_BACKEND=http://kimi-llm:8000/v1
       - PROBLEMS_DIR=/app/problems
       - ELO_STATE_PATH=/app/data/elo.json
       - TRAINING_METRICS_PATH=/app/data/metrics.jsonl
@@ -76,6 +110,8 @@ services:
       - mock-llm
       - claude-llm
       - codex-llm
+      - opencode-llm
+      - kimi-llm
     networks:
       - colosseum
 
