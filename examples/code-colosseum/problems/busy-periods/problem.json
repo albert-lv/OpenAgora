@@ -1,0 +1,11 @@
+{
+  "id": "busy-periods",
+  "title": "Busy Periods",
+  "difficulty": "medium",
+  "tags": ["intervals", "sweep-line", "edge-cases"],
+  "description": "You are given a list of employee shift intervals. Each interval is [start, end) and uses integer timestamps.\n\nReturn the merged time periods during which at least k employees are on duty simultaneously.\n\nRules:\n- Intervals are half-open: a shift ending at time t does not cover t.\n- The returned intervals must be sorted, non-overlapping, and also half-open.\n- Zero-length intervals ([t, t)) do not contribute coverage.\n- If k <= 0, raise ValueError.\n- The input list may be unsorted and may contain overlapping or adjacent intervals.",
+  "function_signature": "def busy_periods(intervals: list[list[int]], k: int) -> list[list[int]]:",
+  "language": "python",
+  "time_limit_ms": 1000,
+  "memory_limit_mb": 256
+}

@@ -1,0 +1,11 @@
+{
+  "id": "merge-sorted-logs",
+  "title": "Merge Sorted Logs",
+  "difficulty": "medium",
+  "tags": ["sorting", "merge", "spec-adherence"],
+  "description": "You are given several log sources. Each source is a list of (timestamp, message) tuples sorted by timestamp in ascending order. Timestamps are strings and can be compared lexicographically (e.g., ISO 8601 strings).\n\nReturn up to n most recent log entries across all sources, sorted from newest to oldest.\n\nRules:\n- The result must be stable: if two entries have the same timestamp, the entry from the source that appears earlier in the input list comes first; within the same source, preserve the original order.\n- If n <= 0, return an empty list.\n- If n is larger than the total number of entries, return all of them.\n- Do not modify the input lists.",
+  "function_signature": "def latest_logs(logs: list[list[tuple[str, str]]], n: int) -> list[tuple[str, str]]:",
+  "language": "python",
+  "time_limit_ms": 1000,
+  "memory_limit_mb": 256
+}

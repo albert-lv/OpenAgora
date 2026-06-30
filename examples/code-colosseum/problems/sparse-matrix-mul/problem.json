@@ -1,0 +1,11 @@
+{
+  "id": "sparse-matrix-mul",
+  "title": "Sparse Matrix-Vector Multiplication",
+  "difficulty": "medium",
+  "tags": ["sparse-data", "linear-algebra", "validation"],
+  "description": "Multiply a sparse matrix by a dense vector.\n\nThe matrix is represented as a dictionary mapping (row, col) tuples to numeric values. Entries not present in the dictionary are zero.\n\nRules:\n- shape is a tuple (rows, cols). Both rows and cols must be positive.\n- vec must have length exactly equal to cols.\n- All matrix keys must be within bounds (0 <= row < rows, 0 <= col < cols).\n- Raise ValueError for invalid shapes, mismatched vector length, or out-of-bounds keys.\n- Return a list of length rows containing the product (floats are acceptable).",
+  "function_signature": "def sparse_matvec(matrix: dict[tuple[int, int], float], shape: tuple[int, int], vec: list[float]) -> list[float]:",
+  "language": "python",
+  "time_limit_ms": 1000,
+  "memory_limit_mb": 256
+}

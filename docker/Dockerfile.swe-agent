@@ -1,0 +1,30 @@
+# Arena × SWE-agent sandbox wrapper.
+#
+# By default this image is a small Python sandbox for SWE-bench-style tasks.
+# For real SWE-bench evaluation, pass the official instance image as BASE_IMAGE:
+#
+#   docker build \
+#     --build-arg BASE_IMAGE=swebench/sweb.eval.x86_64.pallets_1776_flask-4045:latest \
+#     -t openagora-swe-agent:latest \
+#     -f docker/Dockerfile.swe-agent .
+
+ARG BASE_IMAGE=python:3.12-slim
+FROM ${BASE_IMAGE}
+
+# Ensure we have a root-run entrypoint so we can write to the Arena /sandbox
+# bind-mount regardless of the base image's default user.
+USER root
+
+# Install the OpenAI client when it is not already present in the base image.
+# The official SWE-bench images contain Python and pip, so this is safe.
+RUN python3 - <<'PY'
+import importlib.util, subprocess, sys
+if importlib.util.find_spec("openai") is None:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir", "openai"])
+PY
+
+# Copy entrypoint outside /sandbox because /sandbox is bind-mounted as the workspace.
+COPY docker/swe-agent-entrypoint.py /app/entrypoint.py
+RUN chmod +x /app/entrypoint.py
+
+ENTRYPOINT ["python3", "/app/entrypoint.py"]

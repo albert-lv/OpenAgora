@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# Install optional language toolchains on first use inside the sandbox.
+
+case "${1:-}" in
+  node|javascript|jest)
+    if ! command -v node >/dev/null 2>&1; then
+      curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+      apt-get install -y nodejs
+      npm install -g jest
+    fi
+    ;;
+  go|golang)
+    if ! command -v go >/dev/null 2>&1; then
+      arch=$(dpkg --print-architecture)
+      curl -fsSL "https://go.dev/dl/go1.22.4.linux-${arch}.tar.gz" | tar -C /usr/local -xz
+      ln -sf /usr/local/go/bin/go /usr/local/bin/go
+    fi
+    ;;
+  rust|cargo)
+    if ! command -v cargo >/dev/null 2>&1; then
+      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+      export PATH="$HOME/.cargo/bin:$PATH"
+    fi
+    ;;
+  java|maven)
+    apt-get update && apt-get install -y default-jdk maven
+    ;;
+  *)
+    echo "Unknown language: $1" >&2
+    exit 1
+    ;;
+esac

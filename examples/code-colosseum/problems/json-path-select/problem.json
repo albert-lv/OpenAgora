@@ -1,0 +1,11 @@
+{
+  "id": "json-path-select",
+  "title": "JSON Path Select",
+  "difficulty": "medium",
+  "tags": ["recursion", "tree", "spec-adherence"],
+  "description": "Select values from a nested JSON-like structure (dicts and lists) using a simple dot-separated path.\n\nPath syntax:\n- Segments are separated by '.'.\n- A segment can be a literal dictionary key.\n- A segment can be '[i]' to select the i-th element of a list (0-based).\n- A segment can be '*' as a wildcard: over a dict it visits keys in sorted order; over a list it visits every index in order.\n\nReturn a list of all matched values in deterministic order.\n- If a segment does not match the current container, it contributes no matches.\n- If the path is empty, return a list containing the input data.\n- Wildcards may be nested (e.g., '*.items.*.price').",
+  "function_signature": "def select(data: dict | list, path: str) -> list:",
+  "language": "python",
+  "time_limit_ms": 1000,
+  "memory_limit_mb": 256
+}

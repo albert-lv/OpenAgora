@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Arena Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  body { font-family: 'Inter', system-ui, sans-serif; }
+  .card { @apply bg-white rounded-lg shadow p-6; }
+  .tab-btn { @apply px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent hover:border-gray-300 cursor-pointer; }
+  .tab-btn.active { @apply text-blue-600 border-blue-600; }
+  .badge { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium; }
+  .badge-success { @apply bg-green-100 text-green-800; }
+  .badge-failed { @apply bg-red-100 text-red-800; }
+  .badge-pending { @apply bg-yellow-100 text-yellow-800; }
+  .badge-running { @apply bg-blue-100 text-blue-800; }
+  .trajectory-step { @apply border-l-4 border-blue-500 pl-4 py-2 mb-2 bg-gray-50 rounded; }
+  .json-view { @apply font-mono text-xs bg-gray-900 text-green-400 p-3 rounded overflow-x-auto max-h-48 overflow-y-auto; }
+</style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+<div class="max-w-7xl mx-auto px-4 py-8">
+  <!-- Header -->
+  <div class="flex justify-between items-center mb-8">
+    <div>
+      <h1 class="text-3xl font-bold text-gray-900">Arena Dashboard</h1>
+      <p class="text-gray-500 mt-1">Rollout monitoring, verification & trajectory analytics</p>
+    </div>
+    <div class="text-right">
+      <div id="server-status" class="badge badge-success">● Connected</div>
+      <div class="text-xs text-gray-400 mt-1" id="last-updated">Last updated: --</div>
+    </div>
+  </div>
+
+  <!-- Overview Cards -->
+  <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8" id="overview-cards">
+    <div class="card">
+      <div class="text-sm text-gray-500">Total Rollouts</div>
+      <div class="text-3xl font-bold text-gray-900" id="stat-total">--</div>
+    </div>
+    <div class="card">
+      <div class="text-sm text-gray-500">Active</div>
+      <div class="text-3xl font-bold text-blue-600" id="stat-active">--</div>
+    </div>
+    <div class="card">
+      <div class="text-sm text-gray-500">Success Rate</div>
+      <div class="text-3xl font-bold text-green-600" id="stat-success-rate">--</div>
+    </div>
+    <div class="card">
+      <div class="text-sm text-gray-500">Avg Reward</div>
+      <div class="text-3xl font-bold text-purple-600" id="stat-avg-reward">--</div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="bg-white rounded-lg shadow mb-6">
+    <div class="border-b border-gray-200 px-6 pt-4">
+      <nav class="flex space-x-8" id="tabs">
+        <button class="tab-btn active" data-tab="rollouts">Rollouts</button>
+        <button class="tab-btn" data-tab="verify">Verify Stats</button>
+        <button class="tab-btn" data-tab="tokens">Token Stats</button>
+        <button class="tab-btn" data-tab="proxy">Proxy Data</button>
+      </nav>
+    </div>
+
+    <!-- Rollouts Tab -->
+    <div id="tab-rollouts" class="p-6 tab-content">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="text-lg font-semibold">Recent Rollouts</h2>
+        <div class="flex gap-2">
+          <select id="filter-status" class="text-sm border rounded px-2 py-1">
+            <option value="">All Status</option>
+            <option value="success">Success</option>
+            <option value="failed">Failed</option>
+            <option value="running">Running</option>
+            <option value="pending">Pending</option>
+          </select>
+          <button onclick="loadRollouts()" class="text-sm bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Refresh</button>
+        </div>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rollout ID</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Trace ID</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Task</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reward</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="rollouts-table" class="bg-white divide-y divide-gray-200">
+            <tr><td colspan="6" class="px-4 py-8 text-center text-gray-500">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Verify Stats Tab -->
+    <div id="tab-verify" class="p-6 tab-content hidden">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+        <div class="card bg-green-50">
+          <div class="text-sm text-green-600">Total Verified</div>
+          <div class="text-2xl font-bold text-green-800" id="verify-total">--</div>
+        </div>
+        <div class="card bg-blue-50">
+          <div class="text-sm text-blue-600">Success Rate</div>
+          <div class="text-2xl font-bold text-blue-800" id="verify-rate">--</div>
+        </div>
+        <div class="card bg-purple-50">
+          <div class="text-sm text-purple-600">Avg Reward</div>
+          <div class="text-2xl font-bold text-purple-800" id="verify-avg">--</div>
+        </div>
+      </div>
+      <div class="card">
+        <h3 class="text-lg font-semibold mb-4">Reward Distribution</h3>
+        <canvas id="reward-chart" height="80"></canvas>
+      </div>
+    </div>
+
+    <!-- Token Stats Tab -->
+    <div id="tab-tokens" class="p-6 tab-content hidden">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+        <div class="card bg-blue-50">
+          <div class="text-sm text-blue-600">Total Tokens</div>
+          <div class="text-2xl font-bold text-blue-800" id="tokens-total">--</div>
+        </div>
+        <div class="card bg-green-50">
+          <div class="text-sm text-green-600">Prompt Tokens</div>
+          <div class="text-2xl font-bold text-green-800" id="tokens-prompt">--</div>
+        </div>
+        <div class="card bg-purple-50">
+          <div class="text-sm text-purple-600">Completion Tokens</div>
+          <div class="text-2xl font-bold text-purple-800" id="tokens-completion">--</div>
+        </div>
+      </div>
+      <div class="card mb-6">
+        <h3 class="text-lg font-semibold mb-4">Token Usage by Rollout</h3>
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rollout ID</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Steps</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Prompt</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Completion</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+              </tr>
+            </thead>
+            <tbody id="tokens-table" class="bg-white divide-y divide-gray-200">
+              <tr><td colspan="5" class="px-4 py-8 text-center text-gray-500">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <h3 class="text-lg font-semibold mb-4">Token Timeline</h3>
+        <canvas id="token-timeline-chart" height="80"></canvas>
+      </div>
+    </div>
+
+    <!-- Proxy Data Tab -->
+    <div id="tab-proxy" class="p-6 tab-content hidden">
+      <div class="card mb-4">
+        <h3 class="text-lg font-semibold mb-2">Proxy Overview</h3>
+        <p class="text-gray-600 text-sm">Proxy data is captured per trajectory step. Select a rollout to inspect LLM requests and responses.</p>
+      </div>
+      <div id="proxy-placeholder" class="text-center text-gray-500 py-12">
+        Go to Rollouts tab and click "View" to inspect proxy data for a specific rollout.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Trajectory Modal -->
+<div id="trajectory-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 overflow-y-auto">
+  <div class="flex items-center justify-center min-h-screen px-4 py-8">
+    <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+      <div class="flex justify-between items-center p-6 border-b">
+        <div>
+          <h2 class="text-xl font-bold">Trajectory</h2>
+          <div class="text-xs text-gray-500 mt-1">
+            Rollout: <span id="modal-rollout-id" class="font-mono"></span>
+            &nbsp;|&nbsp; Trace: <span id="modal-trace-id" class="font-mono text-blue-600"></span>
+          </div>
+        </div>
+        <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+      </div>
+      <div class="p-6" id="modal-content">
+        <div class="text-center text-gray-500">Loading trajectory...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Logs Modal -->
+<div id="logs-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 overflow-y-auto">
+  <div class="flex items-center justify-center min-h-screen px-4 py-8">
+    <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto flex flex-col">
+      <div class="flex justify-between items-center p-6 border-b">
+        <div>
+          <h2 class="text-xl font-bold">Live Logs</h2>
+          <div class="text-xs text-gray-500 mt-1">
+            Rollout: <span id="logs-modal-rollout-id" class="font-mono"></span>
+            <span id="logs-refreshing" class="ml-2 text-blue-600 hidden">● Refreshing</span>
+          </div>
+        </div>
+        <button onclick="closeLogsModal()" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+      </div>
+      <div class="flex-1 p-0 overflow-hidden">
+        <pre id="logs-content" class="font-mono text-xs bg-gray-900 text-green-400 p-4 h-[60vh] overflow-y-auto whitespace-pre-wrap"></pre>
+      </div>
+      <div class="p-4 border-t bg-gray-50">
+        <label class="flex items-center space-x-2 text-sm">
+          <input type="checkbox" id="logs-auto-refresh" checked class="rounded">
+          <span>Auto refresh every 2s</span>
+        </label>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API_BASE = '';
+let rolloutsData = [];
+let rewardChart = null;
+let tokenTimelineChart = null;
+
+// Tab switching
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.remove('hidden');
+    if (btn.dataset.tab === 'verify') loadVerifyStats();
+    if (btn.dataset.tab === 'tokens') loadTokenStats();
+  });
+});
+
+// Status filter
+document.getElementById('filter-status').addEventListener('change', renderRollouts);
+
+async function fetchJSON(url) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(res.statusText);
+    return await res.json();
+  } catch (e) {
+    console.error('Fetch error:', e);
+    return null;
+  }
+}
+
+async function loadOverview() {
+  const stats = await fetchJSON(API_BASE + '/api/stats/overview');
+  if (!stats) return;
+  document.getElementById('stat-total').textContent = stats.total_rollouts ?? 0;
+  document.getElementById('stat-active').textContent = stats.active_rollouts ?? 0;
+  const rate = stats.total_rollouts > 0 ? (stats.success_count / stats.total_rollouts * 100).toFixed(1) + '%' : '0%';
+  document.getElementById('stat-success-rate').textContent = rate;
+  document.getElementById('stat-avg-reward').textContent = (stats.avg_reward ?? 0).toFixed(2);
+  document.getElementById('last-updated').textContent = 'Last updated: ' + new Date().toLocaleTimeString();
+}
+
+async function loadRollouts() {
+  rolloutsData = await fetchJSON(API_BASE + '/api/rollouts') || [];
+  // Sort by created_at desc
+  rolloutsData.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  renderRollouts();
+}
+
+function renderRollouts() {
+  const filter = document.getElementById('filter-status').value;
+  const tbody = document.getElementById('rollouts-table');
+  const filtered = filter ? rolloutsData.filter(r => r.status === filter) : rolloutsData;
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-gray-500">No rollouts found</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(r => {
+    const statusClass = {
+      success: 'badge-success',
+      failed: 'badge-failed',
+      pending: 'badge-pending',
+      running: 'badge-running'
+    }[r.status] || 'bg-gray-100 text-gray-800';
+    const created = new Date(r.created_at).toLocaleString();
+    const reward = r.reward !== undefined ? r.reward.toFixed(2) : '--';
+    return `<tr class="hover:bg-gray-50">
+      <td class="px-4 py-3 font-mono text-xs text-gray-600">${r.rollout_id.slice(0, 8)}...</td>
+      <td class="px-4 py-3 font-mono text-xs text-gray-500">${r.trace_id ? r.trace_id.slice(0, 8) + '...' : '--'}</td>
+      <td class="px-4 py-3 text-sm">${r.task_id}</td>
+      <td class="px-4 py-3"><span class="badge ${statusClass}">${r.status}</span></td>
+      <td class="px-4 py-3 text-sm font-medium">${reward}</td>
+      <td class="px-4 py-3 text-xs text-gray-500">${created}</td>
+      <td class="px-4 py-3">
+        <button onclick="viewTrajectory('${r.rollout_id}')" class="text-blue-600 hover:text-blue-800 text-sm font-medium mr-2">View</button>
+        <button onclick="viewLogs('${r.rollout_id}')" class="text-gray-600 hover:text-gray-800 text-sm font-medium">Logs</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function viewTrajectory(rolloutId) {
+  document.getElementById('modal-rollout-id').textContent = rolloutId;
+  document.getElementById('modal-trace-id').textContent = '--';
+  document.getElementById('modal-content').innerHTML = '<div class="text-center text-gray-500 py-8">Loading trajectory...</div>';
+  document.getElementById('trajectory-modal').classList.remove('hidden');
+
+  const steps = await fetchJSON(API_BASE + '/api/rollouts/' + rolloutId + '/trajectory');
+  if (!steps || steps.length === 0) {
+    document.getElementById('modal-content').innerHTML = '<div class="text-center text-gray-500 py-8">No trajectory data</div>';
+    return;
+  }
+
+  // Set trace_id from first step metadata.
+  if (steps[0].trace_id) {
+    document.getElementById('modal-trace-id').textContent = steps[0].trace_id;
+  }
+
+  const html = steps.map((step, i) => {
+    const usage = step.response?.usage || {};
+    const logprobs = step.response?.logprobs_len || 0;
+    return `<div class="trajectory-step">
+      <div class="flex justify-between items-start mb-2">
+        <div class="font-semibold text-sm">Step ${i + 1} <span class="text-gray-400 font-normal">#${step.step_id}</span></div>
+        <div class="text-xs text-gray-500">${new Date(step.timestamp).toLocaleString()}</div>
+      </div>
+      <div class="text-xs text-blue-600 mb-1 font-mono">trace: ${step.trace_id || '--'}</div>
+      <div class="grid grid-cols-2 gap-4 text-xs mb-2">
+        <div class="bg-white p-2 rounded border">
+          <div class="text-gray-500 mb-1">Request</div>
+          <div><span class="font-medium">Endpoint:</span> ${step.request?.endpoint || '--'}</div>
+          <div><span class="font-medium">Model:</span> ${step.request?.model || '--'}</div>
+        </div>
+        <div class="bg-white p-2 rounded border">
+          <div class="text-gray-500 mb-1">Response</div>
+          <div><span class="font-medium">Prompt tokens:</span> ${usage.prompt_tokens || 0}</div>
+          <div><span class="font-medium">Completion tokens:</span> ${usage.completion_tokens || 0}</div>
+          <div><span class="font-medium">Logprobs:</span> ${logprobs > 0 ? logprobs + ' bytes' : 'none'}</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('modal-content').innerHTML = html;
+}
+
+function closeModal() {
+  document.getElementById('trajectory-modal').classList.add('hidden');
+}
+
+let logsInterval = null;
+let currentLogsRolloutId = null;
+
+async function viewLogs(rolloutId) {
+  currentLogsRolloutId = rolloutId;
+  document.getElementById('logs-modal-rollout-id').textContent = rolloutId;
+  document.getElementById('logs-content').textContent = 'Loading logs...';
+  document.getElementById('logs-modal').classList.remove('hidden');
+  document.getElementById('logs-refreshing').classList.remove('hidden');
+
+  await loadLogs(rolloutId);
+
+  if (logsInterval) clearInterval(logsInterval);
+  logsInterval = setInterval(() => {
+    if (document.getElementById('logs-auto-refresh').checked && currentLogsRolloutId) {
+      loadLogs(currentLogsRolloutId);
+    }
+  }, 2000);
+}
+
+async function loadLogs(rolloutId) {
+  try {
+    const res = await fetch(API_BASE + '/api/rollouts/' + rolloutId + '/logs');
+    if (!res.ok) throw new Error(res.statusText);
+    const text = await res.text();
+    const el = document.getElementById('logs-content');
+    el.textContent = text || '(no logs yet)';
+    el.scrollTop = el.scrollHeight;
+  } catch (e) {
+    document.getElementById('logs-content').textContent = 'Error loading logs: ' + e.message;
+  }
+}
+
+function closeLogsModal() {
+  document.getElementById('logs-modal').classList.add('hidden');
+  if (logsInterval) {
+    clearInterval(logsInterval);
+    logsInterval = null;
+  }
+  currentLogsRolloutId = null;
+}
+
+async function loadTokenStats() {
+  const stats = await fetchJSON(API_BASE + '/api/stats/tokens');
+  if (!stats) return;
+
+  document.getElementById('tokens-total').textContent = (stats.total_tokens || 0).toLocaleString();
+  document.getElementById('tokens-prompt').textContent = (stats.total_prompt_tokens || 0).toLocaleString();
+  document.getElementById('tokens-completion').textContent = (stats.total_completion_tokens || 0).toLocaleString();
+
+  const tbody = document.getElementById('tokens-table');
+  const byRollout = stats.by_rollout || [];
+  if (byRollout.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-gray-500">No token data</td></tr>';
+  } else {
+    tbody.innerHTML = byRollout.map(r => `
+      <tr class="hover:bg-gray-50">
+        <td class="px-4 py-3 font-mono text-xs text-gray-600">${r.rollout_id.slice(0, 8)}...</td>
+        <td class="px-4 py-3 text-sm">${r.steps}</td>
+        <td class="px-4 py-3 text-sm">${r.prompt_tokens.toLocaleString()}</td>
+        <td class="px-4 py-3 text-sm">${r.completion_tokens.toLocaleString()}</td>
+        <td class="px-4 py-3 text-sm font-medium">${r.total_tokens.toLocaleString()}</td>
+      </tr>
+    `).join('');
+  }
+
+  const timeline = stats.timeline || [];
+  const labels = timeline.slice(-30).map(t => t.timestamp);
+  const promptData = timeline.slice(-30).map(t => t.prompt_tokens || 0);
+  const completionData = timeline.slice(-30).map(t => t.completion_tokens || 0);
+
+  const ctx = document.getElementById('token-timeline-chart').getContext('2d');
+  if (tokenTimelineChart) tokenTimelineChart.destroy();
+  tokenTimelineChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        { label: 'Prompt', data: promptData, borderColor: '#3b82f6', fill: false, tension: 0.3 },
+        { label: 'Completion', data: completionData, borderColor: '#10b981', fill: false, tension: 0.3 }
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: 'bottom' } },
+      scales: { y: { beginAtZero: true } }
+    }
+  });
+}
+
+async function loadVerifyStats() {
+  const stats = await fetchJSON(API_BASE + '/api/stats/verify');
+  if (!stats) return;
+  document.getElementById('verify-total').textContent = stats.total ?? 0;
+  document.getElementById('verify-rate').textContent = ((stats.success_rate || 0) * 100).toFixed(1) + '%';
+  document.getElementById('verify-avg').textContent = (stats.avg_reward || 0).toFixed(2);
+
+  // Build reward distribution chart
+  const rewards = rolloutsData.filter(r => r.status === 'success' || r.status === 'failed').map(r => r.reward);
+  const bins = { '0.0': 0, '0.1-0.5': 0, '0.5-0.9': 0, '1.0': 0 };
+  rewards.forEach(r => {
+    if (r === 0) bins['0.0']++;
+    else if (r >= 1) bins['1.0']++;
+    else if (r < 0.5) bins['0.1-0.5']++;
+    else bins['0.5-0.9']++;
+  });
+
+  const ctx = document.getElementById('reward-chart').getContext('2d');
+  if (rewardChart) rewardChart.destroy();
+  rewardChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: ['0.0', '0.1-0.5', '0.5-0.9', '1.0'],
+      datasets: [{
+        label: 'Count',
+        data: [bins['0.0'], bins['0.1-0.5'], bins['0.5-0.9'], bins['1.0']],
+        backgroundColor: ['#ef4444', '#f59e0b', '#3b82f6', '#10b981']
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+    }
+  });
+}
+
+// Auto refresh every 5 seconds
+setInterval(() => {
+  loadOverview();
+  loadRollouts();
+  const tokensTab = document.getElementById('tab-tokens');
+  if (tokensTab && !tokensTab.classList.contains('hidden')) {
+    loadTokenStats();
+  }
+}, 5000);
+
+// Initial load
+loadOverview();
+loadRollouts();
+</script>
+</body>
+</html>

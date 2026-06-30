@@ -1,0 +1,15 @@
+[
+  {
+    "instance_id": "pallets__flask-4045",
+    "use_llm": true,
+    "no_fallback": true,
+    "status": "success",
+    "reward": 0.0,
+    "elapsed": 94.55743789672852,
+    "returncode": 0,
+    "llm_succeeded": false,
+    "used_fallback": false,
+    "trajectory_steps": 3,
+    "log_tail": "Preparing SWE-bench task pallets__flask-4045 ...\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\nLoading SWE-bench_Lite dataset and looking for pallets__flask-4045 ...\nWrote /Users/albert/CodeProjects/agent-arena/examples/swe-agent/task.json\n  image:        swebench/sweb.eval.x86_64.pallets_1776_flask-4045:latest\n  test_command: bash -lc 'source /opt/miniconda3/bin/activate && conda activate testbed && cd /testbed && pytest -x tests/test_blueprints.py::test_dotted_name_not_allowed tests/test_blueprints.py::test_route_decorator_custom_endpoint_with_dots'\n  #fail_to_pass: 2\nOfficial SWE-bench image: swebench/sweb.eval.x86_64.pallets_1776_flask-4045:latest\nBuilding openagora-swe-agent:pallets__flask-4045 wrapper image...\n#0 building with \"desktop-linux\" instance using docker driver\n\n#1 [internal] load build definition from Dockerfile.swe-agent\n#1 transferring dockerfile: 1.21kB 0.0s done\n#1 DONE 0.0s\n\n#2 [internal] load metadata for docker.io/swebench/sweb.eval.x86_64.pallets_1776_flask-4045:latest\n#2 DONE 0.0s\n\n#3 [internal] load .dockerignore\n#3 transferring context: 263B done\n#3 DONE 0.0s\n\n#4 [1/4] FROM docker.io/swebench/sweb.eval.x86_64.pallets_1776_flask-4045:latest@sha256:e2b0a8441153be4626306f91aba0a88e9ec86d81ebd17ae963c2a33eed3dc5b1\n#4 resolve docker.io/swebench/sweb.eval.x86_64.pallets_1776_flask-4045:latest@sha256:e2b0a8441153be4626306f91aba0a88e9ec86d81ebd17ae963c2a33eed3dc5b1 0.0s done\n#4 DONE 0.0s\n\n#5 [internal] load build context\n#5 transferring context: 21.71kB done\n#5 DONE 0.0s\n\n#6 [2/4] RUN python3 - <<'PY'\n#6 CACHED\n\n#7 [3/4] COPY docker/swe-agent-entrypoint.py /app/entrypoint.py\n#7 DONE 0.0s\n\n#8 [4/4] RUN chmod +x /app/entrypoint.py\n#8 DONE 0.2s\n\n#9 exporting to image\n#9 exporting layers 0.1s done\n#9 exporting manifest sha256:6dbfc3ce6e6b3dfc78bb2b9d288125bcda51d1859e7f98ddf2ef21e250212e06 0.0s done\n#9 exporting config sha256:246c851af0c7384c31a7b618ec42175283dd05331f51491234b1eaf5177c6b62 0.0s done\n#9 exporting attestation manifest sha256:74dc0478b2df3100d314a01155a0911d282c1d8902e9710a4088f54fe2275935 0.0s done\n#9 exporting manifest list sha256:26c3764d8ddb6adfd349866d4c27af26c7ab66bc7479074d9285f7a5109a4125 0.0s done\n#9 naming to docker.io/library/openagora-swe-agent:pallets__flask-4045 done\n#9 unpacking to docker.io/library/openagora-swe-agent:pallets__flask-4045 0.1s done\n#9 DONE 0.4s\n\nView build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/j7rnaruqb0tfbd3lh21zwai4a\nCreating SWE-agent rollout via Arena (localhost:9090)...\nRollout created: 78c08a3f-42b7-49f4-801b-6b2dc33e4653\nWaiting for completion (this may take a while)...\nStatus: success\nReward: 0.0\nTrajectory steps: 3\nTotal tokens: prompt=2383 completion=263\n"
+  }
+]

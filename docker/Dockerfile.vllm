@@ -1,0 +1,22 @@
+# Optional vLLM OpenAI-compatible inference backend for Arena.
+#
+# Usage:
+#   docker build -f docker/Dockerfile.vllm -t openagora-vllm:latest .
+#   docker run --rm --gpus all -p 8000:8000 \
+#     -v ~/.cache/huggingface:/root/.cache/huggingface \
+#     openagora-vllm:latest \
+#     --model Qwen/Qwen3.5-0.8B --served-model-name qwen3.5:0.8b
+#
+# On CPU-only hosts you can add --device cpu, but vLLM is primarily designed
+# for GPUs; expect very slow inference without a CUDA device.
+FROM vllm/vllm-openai:latest
+
+# The base image already exposes the OpenAI server on port 8000.
+# Additional Arena-specific defaults can be supplied here if desired.
+ENV VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
+
+EXPOSE 8000
+
+# Default entrypoint from the upstream image runs vllm serve.
+# Override CMD at runtime to pick the model and options.
+CMD ["--help"]

@@ -1,0 +1,11 @@
+{
+  "id": "number-to-words",
+  "title": "Number to Words",
+  "difficulty": "hard",
+  "tags": ["string", "spec-adherence", "edge-cases"],
+  "description": "Convert a non-negative integer into its English words representation.\n\nRules:\n- Input range: 0 <= n <= 1_000_000_000_000 (one trillion).\n- Return the words in lowercase, separated by single spaces, with no leading or trailing spaces.\n- For numbers 21-99 that are not multiples of 10, use a hyphen (e.g., 'twenty-one').\n- Use the scale words thousand, million, billion, and trillion as needed.\n- Do not use the word 'and'.\n\nExamples:\n- 123 -> 'one hundred twenty-three'\n- 1000010 -> 'one million ten'\n- 1000000000000 -> 'one trillion'",
+  "function_signature": "def number_to_words(n: int) -> str:",
+  "language": "python",
+  "time_limit_ms": 1000,
+  "memory_limit_mb": 256
+}

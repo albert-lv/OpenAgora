@@ -1,0 +1,11 @@
+{
+  "id": "expression-evaluator",
+  "title": "Expression Evaluator",
+  "difficulty": "hard",
+  "tags": ["parsing", "recursion", "spec-adherence"],
+  "description": "Evaluate a simple arithmetic expression string and return its value as a float.\n\nSupported features:\n- Non-negative decimal numbers (e.g., 3, 3.5, 0.25).\n- Binary operators: +, -, *, /.\n- Parentheses for grouping.\n- Unary plus and minus (e.g., -5, --3, +2).\n- Arbitrary whitespace between tokens.\n\nRules:\n- Standard operator precedence applies: parentheses > unary +/- > * and / > + and -.\n- Division by zero must raise ValueError.\n- Any invalid syntax, unknown characters, or mismatched parentheses must raise ValueError.",
+  "function_signature": "def evaluate(expr: str) -> float:",
+  "language": "python",
+  "time_limit_ms": 1000,
+  "memory_limit_mb": 256
+}

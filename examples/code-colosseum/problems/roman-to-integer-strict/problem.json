@@ -1,0 +1,11 @@
+{
+  "id": "roman-to-integer-strict",
+  "title": "Strict Roman to Integer",
+  "difficulty": "medium",
+  "tags": ["string", "validation", "spec-adherence"],
+  "description": "Convert a Roman numeral string to an integer using strict validation.\n\nRules:\n- Symbols: I=1, V=5, X=10, L=50, C=100, D=500, M=1000.\n- Input must be uppercase and represent a value between 1 and 3999 inclusive.\n- Valid subtractive pairs are only IV, IX, XL, XC, CD, and CM.\n- I may be subtracted from V and X only; X from L and C only; C from D and M only.\n- V, L, and D are never repeated.\n- I, X, C, and M may appear at most three times consecutively.\n\nRaise ValueError for any invalid input (empty string, lowercase letters, illegal subtractive notation, repeated symbols, out-of-range values, or unknown characters).",
+  "function_signature": "def roman_to_int(s: str) -> int:",
+  "language": "python",
+  "time_limit_ms": 1000,
+  "memory_limit_mb": 256
+}

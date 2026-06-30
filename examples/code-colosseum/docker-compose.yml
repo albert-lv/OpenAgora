@@ -1,0 +1,197 @@
+# Code Colosseum: full-stack RL Arena demo.
+# Usage:
+#   docker compose -f examples/code-colosseum/docker-compose.yml up --build
+# Then open http://localhost:3000
+#
+# All three coding-agent backends (Claude Code, Codex, OpenCode) route their
+# underlying LLM calls through the Kimi Code API.  Set KIMI_API_KEY before
+# launching.
+#
+# By default a deterministic mock LLM is used as the rollout backend so the
+# demo runs end-to-end on CPU.  To use the trainer's live policy instead,
+# remove the mock-llm service and point ARENA_LLM_BACKEND to http://trainer:8000/v1.
+
+services:
+  mock-llm:
+    build:
+      context: ../..
+      dockerfile: examples/code-colosseum/agent/Dockerfile.agent
+    command: ["python3", "-u", "/app/mock_llm_colosseum.py", "--port", "8000", "--host", "0.0.0.0"]
+    environment:
+      # Return a mix of correct and buggy variants so GRPO group advantages are
+      # non-degenerate and training curves show real learning.
+      - DISABLE_VARIANTS=0
+    networks:
+      - colosseum
+
+  # Claude Code backend — LLM calls are forwarded to Kimi Code API via the
+  # Anthropic-compatible endpoint.
+  claude-llm:
+    build:
+      context: ../..
+      dockerfile: examples/code-colosseum/agent/Dockerfile.claude-codex
+    environment:
+      - MODEL_PROVIDER=claude
+      - ANTHROPIC_API_KEY=${KIMI_API_KEY:-}
+      - ANTHROPIC_BASE_URL=https://api.kimi.com/coding/
+    networks:
+      - colosseum
+
+  # OpenAI Codex backend — LLM calls are forwarded to Kimi Code API.  The
+  # official Codex CLI cannot be routed through OPENAI_BASE_URL because its
+  # agent loop uses OpenAI's /v1/responses WebSocket API, which Kimi does not
+  # implement.  We therefore keep the 'codex' agent type but proxy its LLM
+  # call directly to Kimi Code's chat/completions endpoint.
+  codex-llm:
+    build:
+      context: ../..
+      dockerfile: examples/code-colosseum/agent/Dockerfile.claude-codex
+    environment:
+      - MODEL_PROVIDER=codex
+      - OPENAI_API_KEY=${KIMI_API_KEY:-}
+      - OPENAI_BASE_URL=https://api.kimi.com/coding/v1
+      - KIMI_API_KEY=${KIMI_API_KEY:-}
+      - KIMI_BASE_URL=https://api.kimi.com/coding/v1
+      - KIMI_MODEL=kimi-for-coding
+    networks:
+      - colosseum
+
+  # OpenCode backend — proxies to Kimi Code API (OpenAI-compatible endpoint).
+  opencode-llm:
+    build:
+      context: ../..
+      dockerfile: examples/code-colosseum/agent/Dockerfile.opencode
+    environment:
+      - KIMI_API_KEY=${KIMI_API_KEY:-}
+      - KIMI_BASE_URL=https://api.kimi.com/coding/v1
+      - KIMI_MODEL=kimi-for-coding
+    networks:
+      - colosseum
+
+  # Kimi Code CLI backend — wraps the native Kimi CLI in non-interactive mode.
+  # Authentication is handled by the CLI itself (OAuth via /login or API key).
+  kimi-llm:
+    build:
+      context: ../..
+      dockerfile: examples/code-colosseum/agent/Dockerfile.kimi
+    environment:
+      - KIMI_API_KEY=${KIMI_API_KEY:-}
+      - KIMI_TIMEOUT=120
+    networks:
+      - colosseum
+
+  # Build the Code Colosseum agent image so arena-server can spawn it.
+  agent-builder:
+    build:
+      context: ../..
+      dockerfile: examples/code-colosseum/agent/Dockerfile.agent
+    image: openagora-code-colosseum-agent:latest
+    container_name: code-colosseum-agent-builder
+    entrypoint: ["sh", "-c", "echo 'Code Colosseum agent image built'"]
+    networks:
+      - colosseum
+
+  arena-server:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.server
+    environment:
+      - ARENA_PROXY_ADVERTISE_HOST=arena-server
+      - TMPDIR=/tmp/arena-colosseum-tmp
+      - ARENA_DOCKER_NETWORK=colosseum
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/arena-colosseum-tmp:/tmp/arena-colosseum-tmp
+    networks:
+      - colosseum
+
+  orchestrator:
+    build:
+      context: ../..
+      dockerfile: examples/code-colosseum/backend/Dockerfile
+    environment:
+      - ARENA_ENDPOINT=arena-server:9090
+      - ARENA_AGENT_IMAGE=openagora-code-colosseum-agent:latest
+      - ARENA_MOCK_LLM_BACKEND=http://mock-llm:8000/v1
+      - ARENA_CLAUDE_LLM_BACKEND=http://claude-llm:8000/v1
+      - ARENA_CODEX_LLM_BACKEND=http://codex-llm:8000/v1
+      - ARENA_OPENCODE_LLM_BACKEND=http://opencode-llm:8000/v1
+      - ARENA_KIMI_LLM_BACKEND=http://kimi-llm:8000/v1
+      - PROBLEMS_DIR=/app/problems
+      - ELO_STATE_PATH=/app/data/elo.json
+      - TRAINING_METRICS_PATH=/app/data/metrics.jsonl
+    volumes:
+      - colosseum-data:/app/data
+    depends_on:
+      - arena-server
+      - mock-llm
+      - claude-llm
+      - codex-llm
+      - opencode-llm
+      - kimi-llm
+      - agent-builder
+    networks:
+      - colosseum
+
+  dashboard:
+    build:
+      context: ../..
+      dockerfile: examples/code-colosseum/dashboard/Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - orchestrator
+    networks:
+      - colosseum
+
+  # RL trainer. Default uses Qwen2.5-0.5B for CPU-friendly training.
+  # Increase BATCH_SIZE / PPO_EPOCHS or swap MODEL_NAME for stronger hardware.
+  trainer:
+    build:
+      context: ../..
+      dockerfile: examples/code-colosseum/training/Dockerfile
+    environment:
+      - ARENA_ENDPOINT=arena-server:9090
+      - ARENA_AGENT_IMAGE=openagora-code-colosseum-agent:latest
+      # Default uses the deterministic mock LLM backend so the demo runs quickly
+      # on CPU and shows controllable reward variance.  Set
+      # TRAINER_USE_LIVE_POLICY=1 to use the trainer's live policy server
+      # instead; this requires GPU or sufficient CPU patience because a 0.5B
+      # model inference can be slow inside Docker on modest hardware.
+      - ARENA_LLM_BACKEND=${TRAINER_ARENA_LLM_BACKEND:-http://mock-llm:8000/v1}
+      - PROBLEMS_DIR=/app/problems
+      - METRICS_PATH=/app/data/metrics.jsonl
+      - CHECKPOINT_DIR=/app/checkpoints
+      # Swap MODEL_NAME to any HuggingFace causal LM that fits your hardware,
+      # e.g. Qwen/Qwen3.5-0.8B or Qwen/Qwen2.5-1.5B-Instruct.
+      - MODEL_NAME=Qwen/Qwen2.5-0.5B-Instruct
+      - NUM_ITERATIONS=3
+      - BATCH_SIZE=1
+      - GROUP_SIZE=4
+      - GRPO_EPOCHS=1
+      - MAX_PROMPT_LEN=64
+      - MAX_RESPONSE_LEN=128
+      # Advertise the policy LLM server under the Docker service name so agent
+      # sandboxes can reach it when ARENA_LLM_BACKEND is switched to trainer:8000.
+      - POLICY_LLM_ADVERTISE_HOST=trainer
+      - POLICY_MAX_TOKENS=256
+      - HF_HUB_OFFLINE=1
+      - TRANSFORMERS_OFFLINE=1
+    expose:
+      - "8000"
+    volumes:
+      - colosseum-data:/app/data
+      - ~/.cache/huggingface:/app/.cache/huggingface
+    depends_on:
+      - arena-server
+      - mock-llm
+    networks:
+      - colosseum
+
+networks:
+  colosseum:
+    driver: bridge
+    name: colosseum
+
+volumes:
+  colosseum-data:

@@ -1,0 +1,15 @@
+# Minimal Arena agent image.
+# Uses Alpine + system Python3 for a much smaller footprint than python:3.12-slim.
+# Size comparison: ~73 MB (alpine) vs ~177 MB (python:3.12-slim).
+FROM alpine:3.21
+
+# Install Python 3 from Alpine repos (no pip needed for stdlib-only scripts).
+RUN apk add --no-cache python3
+
+# Place the agent script outside the /sandbox bind-mount so it is not shadowed.
+WORKDIR /app
+COPY docker/agent-minimal.py /app/agent.py
+
+# Sandboxes receive a bind-mount at /sandbox, so keep that as the working dir.
+WORKDIR /sandbox
+CMD ["python3", "/app/agent.py"]

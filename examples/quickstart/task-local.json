@@ -1,0 +1,13 @@
+{
+  "task_id": "quickstart-local",
+  "description": "Write a Python function that returns the sum of two numbers.",
+  "sandbox_image": "/Users/albert/CodeProjects/agent-arena/examples/quickstart/agent-local.py",
+  "llm_backend": "http://localhost:8000/v1",
+  "sampling": {
+    "temperature": 0.3,
+    "max_tokens": 512
+  },
+  "verify": {
+    "command": "python3 -c \"import solution; assert solution.add(1,2)==3\""
+  }
+}

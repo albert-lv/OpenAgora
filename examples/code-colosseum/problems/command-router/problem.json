@@ -1,0 +1,11 @@
+{
+  "id": "command-router",
+  "title": "Command Router",
+  "difficulty": "medium",
+  "tags": ["string", "routing", "spec-adherence"],
+  "description": "Implement a tiny HTTP-style path router.\n\nGiven a path string and an ordered list of route definitions, return the first matching route's name and its captured parameters.\n\nRoute pattern syntax:\n- Segments are separated by '/'.\n- A static segment matches exactly (case-sensitive).\n- A ':name' segment matches any non-empty path segment and captures it under the given name.\n- A '*' segment must be the last segment. It matches zero or more remaining path segments and captures them as a single string under the key '*'.\n\nRules:\n- Routes are checked in the order provided; the first match wins.\n- If no route matches, return None.\n- Both path and patterns start with '/'. The root path '/' matches the root pattern '/'.\n- Parametric placeholders only match non-empty segments.",
+  "function_signature": "def match_route(path: str, routes: list[tuple[str, str]]) -> tuple[str, dict[str, str]] | None:",
+  "language": "python",
+  "time_limit_ms": 1000,
+  "memory_limit_mb": 256
+}

@@ -1,0 +1,171 @@
+# CPU-only RL training stack for the relationship-chat example.
+#
+# Usage:
+#   cd examples/relationship-chat-rl
+#   docker compose up --build
+#
+# Then open the Arena dashboard at http://localhost:9091 and watch the
+# "Verify Stats" tab to see the success-rate curve climb as PPO learns.
+
+services:
+  # ------------------------------------------------------------------
+  # Ollama — local LLM inference backend (CPU friendly)
+  # ------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    container_name: relationship-chat-ollama
+    volumes:
+      - ~/.ollama:/root/.ollama
+    ports:
+      - "11434:11434"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - openagora-net
+
+  # ------------------------------------------------------------------
+  # Arena Server — manages sandbox lifecycle, proxy, trajectory, verify.
+  # ------------------------------------------------------------------
+  openagora-server:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.server
+    container_name: relationship-chat-server
+    command: --sandbox=local
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./agent/chat_agent.py:/app/chat_agent.py:ro
+      - ./verify/score_response.py:/app/score_response.py:ro
+    ports:
+      - "9090:9090"
+      - "9091:9091"
+    environment:
+      - PROXY_ADVERTISE_HOST=host.docker.internal
+      - ARENA_LLM_MODEL=qwen3.5:0.8b
+      - ARENA_PROXY_TIMEOUT_SECONDS=600
+      - ARENA_AGENT_TIMEOUT_SECONDS=600
+      - ARENA_AGENT_MAX_TOKENS=64
+    depends_on:
+      ollama:
+        condition: service_started
+    networks:
+      - openagora-net
+
+  # ------------------------------------------------------------------
+  # Build the base minimal agent image that our custom image extends.
+  # ------------------------------------------------------------------
+  minimal-agent-builder:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.agent-minimal
+    image: openagora-agent-minimal:latest
+    container_name: relationship-chat-minimal-agent-builder
+    entrypoint: ["sh", "-c", "echo 'Minimal agent image built'"]
+    networks:
+      - openagora-net
+
+  # ------------------------------------------------------------------
+  # Build the relationship-chat agent image.
+  # ------------------------------------------------------------------
+  relationship-chat-agent-builder:
+    build:
+      context: ../..
+      dockerfile: examples/relationship-chat-rl/agent/Dockerfile
+    image: relationship-chat-agent:latest
+    container_name: relationship-chat-agent-builder
+    depends_on:
+      minimal-agent-builder:
+        condition: service_completed_successfully
+    entrypoint: ["sh", "-c", "echo 'Relationship chat agent image built'"]
+    networks:
+      - openagora-net
+
+  # ------------------------------------------------------------------
+  # Ray Head — distributed training coordinator (CPU mode).
+  # ------------------------------------------------------------------
+  ray-head:
+    image: rayproject/ray:2.55.1-py312-cpu
+    container_name: relationship-chat-ray-head
+    command: >
+      bash -c "ray start --head --port=6379 --include-dashboard=false --disable-usage-stats --block"
+    ports:
+      - "6379:6379"
+      - "10001:10001"
+    networks:
+      - openagora-net
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 2G
+
+  # ------------------------------------------------------------------
+  # CPU Trainer — PPO on the relationship-chat task.
+  # ------------------------------------------------------------------
+  trainer:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.cpu-trainer
+    container_name: relationship-chat-trainer
+    command:
+      - python3
+      - -u
+      - /app/train_relationship_chat.py
+    environment:
+      - MODEL_NAME=Qwen/Qwen3.5-0.8B
+      - DATASET_PATH=/app/data/scenarios.jsonl
+      - ARENA_ENDPOINT=openagora-server:9090
+      - ARENA_AGENT_IMAGE=relationship-chat-agent:latest
+      - ARENA_LLM_BACKEND=http://ollama:11434/v1
+      - ARENA_LLM_MODEL=qwen3.5:0.8b
+      - ARENA_VERIFY_COMMAND=python3 /app/score_response.py
+      - CHECKPOINT_DIR=/app/checkpoints
+      - METRICS_PATH=/app/data/metrics.jsonl
+      - HF_HOME=/app/.cache/huggingface
+      - TRANSFORMERS_OFFLINE=0
+      - PYTHONUNBUFFERED=1
+      # HuggingFace SOCKS proxy (host.docker.internal maps to the Mac host).
+      # Replace YOUR_PROXY_PORT with your actual proxy port (e.g. 7890).
+      # Leave PROXY_PORT unset to disable the proxy.
+      - HTTP_PROXY=${HTTP_PROXY:-${PROXY_PORT:+socks5h://host.docker.internal:${PROXY_PORT}}}
+      - HTTPS_PROXY=${HTTPS_PROXY:-${PROXY_PORT:+socks5h://host.docker.internal:${PROXY_PORT}}}
+      - NO_PROXY=${NO_PROXY:-localhost,127.0.0.1,openagora-server,ollama,ray-head}
+      - HF_HUB_ENABLE_HF_TRANSFER=0
+      # Tune these knobs to trade speed vs. learning quality.
+      - NUM_ITERATIONS=1
+      - BATCH_SIZE=1
+      - PPO_EPOCHS=1
+      - LEARNING_RATE=2e-5
+      - MAX_PROMPT_LEN=64
+      - MAX_RESPONSE_LEN=64
+      - ARENA_TIMEOUT_SECONDS=600
+    volumes:
+      - ~/.cache/huggingface:/app/.cache/huggingface
+      - ./data:/app/data
+      - ./train_relationship_chat.py:/app/train_relationship_chat.py:ro
+      - ./checkpoints:/app/checkpoints
+      - ../../python/openagora-verl:/opt/openagora-verl:ro
+    depends_on:
+      ollama:
+        condition: service_healthy
+      openagora-server:
+        condition: service_started
+      agent-builder:
+        condition: service_completed_successfully
+      ray-head:
+        condition: service_started
+    networks:
+      - openagora-net
+    shm_size: '2gb'
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 8G
+
+networks:
+  openagora-net:
+    driver: bridge

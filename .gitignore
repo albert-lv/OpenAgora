@@ -1,0 +1,25 @@
+/bin/
+/go/bin/
+/go/openagora-server
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.venv/
+*.log
+.venv*
+.venv*/
+.DS_Store
+node_modules/
+checkpoints/
+
+# SWE-agent demo artifacts
+examples/swe-agent/task.json
+examples/swe-agent/benchmark_results.json
+examples/swe-agent/benchmark_test.json
+examples/swe-agent/benchmark_*.log
+
+# Editor / assistant session exports
+kimi-export-*.md
+*.session.md
