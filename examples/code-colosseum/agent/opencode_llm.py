@@ -38,19 +38,23 @@ async def chat_completions(req: ChatCompletionRequest):
             status_code=500, detail="KIMI_API_KEY environment variable not set"
         )
 
+    # Kimi Code API constraints.
+    messages = []
+    for m in req.messages:
+        if isinstance(m, dict) and m.get("content") == "":
+            m = {**m, "content": " "}
+        messages.append(m)
+
+    # kimi-for-coding only accepts temperature=1 and top_p=0.95.
     payload = {
         "model": req.model or KIMI_MODEL,
-        "messages": req.messages,
-        "temperature": req.temperature,
-        "top_p": req.top_p,
+        "messages": messages,
+        "temperature": 1,
+        "top_p": 0.95,
         "max_tokens": req.max_tokens,
     }
     if req.seed is not None:
         payload["seed"] = req.seed
-    if req.logprobs is not None:
-        payload["logprobs"] = req.logprobs
-    if req.top_logprobs is not None:
-        payload["top_logprobs"] = req.top_logprobs
 
     async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
         try:
@@ -70,9 +74,7 @@ async def chat_completions(req: ChatCompletionRequest):
                 detail=f"Kimi API error: {e.response.text}",
             )
         except httpx.RequestError as e:
-            raise HTTPException(
-                status_code=503, detail=f"Kimi API request failed: {e}"
-            )
+            raise HTTPException(status_code=503, detail=f"Kimi API request failed: {e}")
 
 
 @app.get("/v1/models")

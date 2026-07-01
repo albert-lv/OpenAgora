@@ -11,9 +11,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Kimi Code CLI (Node.js version).
-# See https://www.kimi.com/code/docs for latest installation.
-RUN curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash
+# Install the Kimi Code CLI binary to a shared, executable location as root.
+# The install script resolves the latest version and downloads the matching
+# binary; we then move it to /usr/local/bin so the unprivileged agent user
+# can execute it.
+RUN curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash \
+    && mkdir -p /usr/local/bin \
+    && cp /root/.kimi-code/bin/kimi /usr/local/bin/kimi \
+    && chmod +x /usr/local/bin/kimi
 
 # Kimi CLI may refuse to run as root in some modes.
 RUN useradd -m -s /bin/bash agent
@@ -26,7 +31,7 @@ COPY --chown=agent:agent examples/code-colosseum/agent/kimi_llm.py /app/llm.py
 RUN pip3 install --break-system-packages --user -r /app/requirements.txt
 
 ENV KIMI_TIMEOUT=120
-ENV PATH="/home/agent/.local/bin:/root/.kimi/bin:${PATH}"
+ENV PATH="/home/agent/.local/bin:/usr/local/bin:${PATH}"
 EXPOSE 8000
 
 ENTRYPOINT ["python3", "-u", "/app/llm.py"]

@@ -17,7 +17,9 @@ LLM_BACKENDS = {
     "mock": os.environ.get("ARENA_MOCK_LLM_BACKEND", "http://mock-llm:8000/v1"),
     "claude": os.environ.get("ARENA_CLAUDE_LLM_BACKEND", "http://claude-llm:8000/v1"),
     "codex": os.environ.get("ARENA_CODEX_LLM_BACKEND", "http://codex-llm:8000/v1"),
-    "opencode": os.environ.get("ARENA_OPENCODE_LLM_BACKEND", "http://opencode-llm:8000/v1"),
+    "opencode": os.environ.get(
+        "ARENA_OPENCODE_LLM_BACKEND", "http://opencode-llm:8000/v1"
+    ),
     "kimi": os.environ.get("ARENA_KIMI_LLM_BACKEND", "http://kimi-llm:8000/v1"),
 }
 

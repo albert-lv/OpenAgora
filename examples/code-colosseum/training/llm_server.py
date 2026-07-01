@@ -35,6 +35,7 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: int = Field(1024, ge=1)
     seed: Optional[int] = None
     logprobs: bool = False
+    top_logprobs: Optional[int] = Field(None, ge=0, le=20)
 
 
 @app.get("/v1/models")
@@ -69,10 +70,16 @@ async def chat_completion(req: ChatCompletionRequest):
     if req.seed is not None:
         torch.manual_seed(req.seed)
 
+    # Cap generation length for the CPU demo so rollouts finish before proxy
+    # timeouts while still leaving room for short coding solutions.
+    max_new_tokens = min(
+        req.max_tokens, int(os.environ.get("POLICY_MAX_TOKENS", "256"))
+    )
+
     generate_kwargs = {
         "input_ids": inputs["input_ids"],
         "attention_mask": inputs["attention_mask"],
-        "max_new_tokens": req.max_tokens,
+        "max_new_tokens": max_new_tokens,
         "do_sample": req.temperature > 1e-6,
         "temperature": max(req.temperature, 1e-3),
         "top_p": req.top_p,

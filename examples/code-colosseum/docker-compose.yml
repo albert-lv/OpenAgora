@@ -37,8 +37,11 @@ services:
     networks:
       - colosseum
 
-  # OpenAI Codex backend — LLM calls are forwarded to Kimi Code API via the
-  # OpenAI-compatible endpoint.
+  # OpenAI Codex backend — LLM calls are forwarded to Kimi Code API.  The
+  # official Codex CLI cannot be routed through OPENAI_BASE_URL because its
+  # agent loop uses OpenAI's /v1/responses WebSocket API, which Kimi does not
+  # implement.  We therefore keep the 'codex' agent type but proxy its LLM
+  # call directly to Kimi Code's chat/completions endpoint.
   codex-llm:
     build:
       context: ../..
@@ -47,6 +50,9 @@ services:
       - MODEL_PROVIDER=codex
       - OPENAI_API_KEY=${KIMI_API_KEY:-}
       - OPENAI_BASE_URL=https://api.kimi.com/coding/v1
+      - KIMI_API_KEY=${KIMI_API_KEY:-}
+      - KIMI_BASE_URL=https://api.kimi.com/coding/v1
+      - KIMI_MODEL=kimi-for-coding
     networks:
       - colosseum
 
@@ -136,9 +142,11 @@ services:
       - ARENA_ENDPOINT=arena-server:9090
       - ARENA_AGENT_IMAGE=openagora-code-colosseum-agent:latest
       # Default uses the deterministic mock LLM backend so the demo runs quickly
-      # on CPU and shows controllable reward variance.  To use the trainer's
-      # live policy server instead, change this to http://trainer:8000/v1.
-      - ARENA_LLM_BACKEND=http://mock-llm:8000/v1
+      # on CPU and shows controllable reward variance.  Set
+      # TRAINER_USE_LIVE_POLICY=1 to use the trainer's live policy server
+      # instead; this requires GPU or sufficient CPU patience because a 0.5B
+      # model inference can be slow inside Docker on modest hardware.
+      - ARENA_LLM_BACKEND=${TRAINER_ARENA_LLM_BACKEND:-http://mock-llm:8000/v1}
       - PROBLEMS_DIR=/app/problems
       - METRICS_PATH=/app/data/metrics.jsonl
       - CHECKPOINT_DIR=/app/checkpoints
@@ -154,6 +162,7 @@ services:
       # Advertise the policy LLM server under the Docker service name so agent
       # sandboxes can reach it when ARENA_LLM_BACKEND is switched to trainer:8000.
       - POLICY_LLM_ADVERTISE_HOST=trainer
+      - POLICY_MAX_TOKENS=256
       - HF_HUB_OFFLINE=1
       - TRANSFORMERS_OFFLINE=1
     expose:

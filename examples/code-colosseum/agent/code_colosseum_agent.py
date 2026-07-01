@@ -21,6 +21,7 @@ The task.json format expected by this agent:
 import json
 import os
 import sys
+import time
 import traceback
 import urllib.error
 import urllib.request
@@ -199,7 +200,9 @@ def main() -> int:
         return 1
 
     write_result("success", 0.0, "", "")
-    print("Done.")
+    print("Done. Waiting for Arena verification (keeping container alive)...")
+    while True:
+        time.sleep(5)
     return 0
 
 

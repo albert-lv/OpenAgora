@@ -81,15 +81,23 @@ http://localhost:3000
 ### 3. Watch training
 
 The **Training** tab shows live reward/loss/KL curves.  By default the trainer
-uses the deterministic mock LLM backend, which returns a mix of correct and
-buggy solution variants.  This creates non-zero reward variance within each
-GRPO group, so the training curves show real learning even on CPU hardware.
-Metrics are written to the shared data volume and served to the dashboard.
+uses the deterministic **mock LLM backend**, which returns a mix of correct and
+buggy solution variants.  This creates non-zero reward variance within each GRPO
+group, so the training curves show real learning even on CPU hardware.
 
-To switch to the trainer's live policy server, set
-`ARENA_LLM_BACKEND=http://trainer:8000/v1` in `docker-compose.yml`.  Because the
-server shares the same model object as the trainer, each GRPO update is then
-reflected in the next rollout's generations.
+To use the trainer's own **live policy server** (`training/llm_server.py`) as
+the LLM backend, set `TRAINER_ARENA_LLM_BACKEND=http://trainer:8000/v1` before
+bringing the stack up:
+
+```bash
+export TRAINER_ARENA_LLM_BACKEND=http://trainer:8000/v1
+docker compose -f examples/code-colosseum/docker-compose.yml up --build
+```
+
+Because the policy server shares the same model object as the trainer, each
+GRPO update is immediately reflected in the next rollout's generations.  Live
+policy is more realistic but significantly slower on CPU; a GPU is recommended
+for a smooth demo.
 
 ### 4. Start a duel
 

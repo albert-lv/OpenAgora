@@ -1,100 +1,80 @@
-"""OpenAI-compatible LLM backend powered by Kimi Code CLI.
+"""OpenAI-compatible LLM backend powered by Kimi Code API.
 
-Wraps the Kimi CLI in non-interactive mode and exposes an OpenAI-compatible
-chat completions endpoint. The underlying LLM is whatever Kimi CLI is
-configured to use (by default the Kimi Code API via OAuth or API key).
+This service used to wrap the Kimi CLI, but configuring the CLI inside a
+container (model alias, provider, credentials) is fragile. We now call the
+Kimi Code API directly using the provided KIMI_API_KEY.
 """
 
 import os
-import subprocess
 from typing import Any
 
+import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-app = FastAPI(title="Kimi Code CLI LLM Backend")
+app = FastAPI(title="Kimi Code API LLM Backend")
 
-KIMI_TIMEOUT = int(os.environ.get("KIMI_TIMEOUT", "120"))
+KIMI_API_KEY = os.environ.get("KIMI_API_KEY")
+KIMI_BASE_URL = os.environ.get("KIMI_BASE_URL", "https://api.kimi.com/coding/v1")
+KIMI_MODEL = os.environ.get("KIMI_MODEL", "kimi-for-coding")
+
+DEFAULT_TIMEOUT = 120.0
 
 
 class ChatCompletionRequest(BaseModel):
-    model: str = "kimi"
+    model: str = KIMI_MODEL
     messages: list[dict[str, Any]]
     temperature: float | None = None
     top_p: float | None = None
-    max_tokens: int | None = None
+    max_tokens: int | None = 2048
     seed: int | None = None
-
-
-def build_prompt(messages: list[dict[str, Any]]) -> str:
-    """Flatten messages into a single prompt string."""
-    parts = []
-    for m in messages:
-        role = m.get("role", "user")
-        content = m.get("content", "")
-        parts.append(f"[{role}]\n{content}")
-    return "\n\n".join(parts)
-
-
-def call_kimi(prompt: str) -> str:
-    """Call Kimi CLI in non-interactive mode.
-
-    Tries the modern headless invocations first:
-      1. kimi -p <prompt> --output-format stream-json
-      2. kimi --print --output-format stream-json <prompt>
-      3. kimi "<prompt>"
-    """
-    commands = [
-        ["kimi", "-p", prompt, "--output-format", "stream-json"],
-        ["kimi", "--print", "--output-format", "stream-json", prompt],
-        ["kimi", prompt],
-    ]
-
-    last_error = ""
-    for cmd in commands:
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=KIMI_TIMEOUT,
-            )
-            if result.returncode == 0:
-                return result.stdout or result.stderr
-            last_error = result.stderr or f"exit code {result.returncode}"
-        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-            last_error = str(e)
-            continue
-
-    raise RuntimeError(f"All Kimi CLI invocation attempts failed: {last_error}")
+    logprobs: bool | None = None
+    top_logprobs: int | None = None
 
 
 @app.post("/v1/chat/completions")
 async def chat_completions(req: ChatCompletionRequest):
-    prompt = build_prompt(req.messages)
+    if not KIMI_API_KEY:
+        raise HTTPException(
+            status_code=500, detail="KIMI_API_KEY environment variable not set"
+        )
 
-    try:
-        content = call_kimi(prompt)
-    except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    messages = []
+    for m in req.messages:
+        if isinstance(m, dict) and m.get("content") == "":
+            m = {**m, "content": " "}
+        messages.append(m)
 
-    return {
-        "id": "kimi-cli-llm-1",
-        "object": "chat.completion",
-        "created": 0,
-        "model": req.model,
-        "choices": [
-            {
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": content,
-                },
-                "finish_reason": "stop",
-            }
-        ],
-        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+    # kimi-for-coding constraints: temperature must be 1, top_p must be 0.95.
+    payload = {
+        "model": req.model or KIMI_MODEL,
+        "messages": messages,
+        "temperature": 1,
+        "top_p": 0.95,
+        "max_tokens": req.max_tokens,
     }
+    if req.seed is not None:
+        payload["seed"] = req.seed
+
+    async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+        try:
+            response = await client.post(
+                f"{KIMI_BASE_URL}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {KIMI_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={k: v for k, v in payload.items() if v is not None},
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail=f"Kimi API error: {e.response.text}",
+            )
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Kimi API request failed: {e}")
 
 
 @app.get("/v1/models")
@@ -103,7 +83,7 @@ async def list_models():
         "object": "list",
         "data": [
             {
-                "id": "kimi",
+                "id": KIMI_MODEL,
                 "object": "model",
             }
         ],
@@ -112,7 +92,12 @@ async def list_models():
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "provider": "kimi-code-cli"}
+    return {
+        "status": "ok",
+        "provider": "kimi-code-api",
+        "model": KIMI_MODEL,
+        "base_url": KIMI_BASE_URL,
+    }
 
 
 if __name__ == "__main__":

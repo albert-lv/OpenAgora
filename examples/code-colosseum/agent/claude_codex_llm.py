@@ -1,15 +1,27 @@
-"""OpenAI-compatible LLM backend powered by Claude Code or Codex CLI."""
+"""OpenAI-compatible LLM backend powered by Claude Code or Kimi Code API.
+
+The service name in docker-compose is "codex-llm" for backward compatibility,
+but the Codex CLI itself cannot be routed to Kimi because it relies on OpenAI's
+/v1/responses WebSocket API, which Kimi does not expose.  When
+OPENAI_API_KEY == KIMI_API_KEY (the default compose setup), the codex provider
+falls back to a direct Kimi Code API chat/completions call.
+"""
 
 import os
 import subprocess
 from typing import Any
 
-from fastapi import FastAPI
+import httpx
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-app = FastAPI(title="Claude/Codex LLM Backend")
+app = FastAPI(title="Claude/Kimi LLM Backend")
 
 PROVIDER = os.environ.get("MODEL_PROVIDER", "claude").lower()
+
+KIMI_API_KEY = os.environ.get("KIMI_API_KEY")
+KIMI_BASE_URL = os.environ.get("KIMI_BASE_URL", "https://api.kimi.com/coding/v1")
+KIMI_MODEL = os.environ.get("KIMI_MODEL", "kimi-for-coding")
 
 
 class ChatCompletionRequest(BaseModel):
@@ -58,16 +70,49 @@ def call_claude(prompt: str) -> str:
     return result.stdout or result.stderr
 
 
-def call_codex(prompt: str) -> str:
-    """Call OpenAI Codex CLI in non-interactive mode via Kimi Code API.
+def _call_kimi_api(prompt: str) -> str:
+    """Direct Kimi Code API call for the codex backend fallback."""
+    if not KIMI_API_KEY:
+        raise RuntimeError("KIMI_API_KEY not set; cannot route codex backend to Kimi")
 
-    OPENAI_BASE_URL is set to Kimi Code's OpenAI-compatible endpoint
-    so the underlying LLM calls hit Kimi.
+    messages = [{"role": "user", "content": prompt}]
+    payload = {
+        "model": KIMI_MODEL,
+        "messages": messages,
+        "temperature": 1,
+        "top_p": 0.95,
+        "max_tokens": 2048,
+    }
+
+    with httpx.Client(timeout=120.0) as client:
+        response = client.post(
+            f"{KIMI_BASE_URL}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {KIMI_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+        response.raise_for_status()
+        data = response.json()
+        choices = data.get("choices", [])
+        if choices:
+            return choices[0].get("message", {}).get("content", "")
+    return ""
+
+
+def call_codex(prompt: str) -> str:
+    """Return code from the codex backend.
+
+    The official Codex CLI targets OpenAI's /v1/responses WebSocket API, which
+    Kimi does not implement.  When KIMI_API_KEY is available we therefore fall
+    back to a direct Kimi Code API chat/completions call so that the Code
+    Colosseum "codex" agent still functions end-to-end.  Only when no Kimi key
+    is configured do we attempt the real Codex CLI against OpenAI.
     """
-    env = os.environ.copy()
-    env["OPENAI_BASE_URL"] = os.environ.get(
-        "OPENAI_BASE_URL", "https://api.kimi.com/coding/v1"
-    )
+    if KIMI_API_KEY:
+        return _call_kimi_api(prompt)
+
     result = subprocess.run(
         [
             "codex",
@@ -79,7 +124,6 @@ def call_codex(prompt: str) -> str:
         text=True,
         input="",
         timeout=120,
-        env=env,
     )
     return result.stdout or result.stderr
 
@@ -93,7 +137,9 @@ async def chat_completions(req: ChatCompletionRequest):
     elif PROVIDER == "codex":
         content = call_codex(prompt)
     else:
-        raise ValueError(f"Unknown MODEL_PROVIDER: {PROVIDER}")
+        raise HTTPException(
+            status_code=400, detail=f"Unknown MODEL_PROVIDER: {PROVIDER}"
+        )
 
     return {
         "id": "claude-codex-llm-1",

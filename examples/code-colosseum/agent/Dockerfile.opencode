@@ -1,6 +1,6 @@
 # OpenCode LLM backend — proxies to Kimi Code API via OpenAI-compatible interface.
 # Build context: repo root.
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
