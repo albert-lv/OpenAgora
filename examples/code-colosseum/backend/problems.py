@@ -78,6 +78,7 @@ class Problem:
                 "function_signature": self.function_signature,
                 "language": self.language,
             },
+            "public_tests": self.public_tests,
             "hidden_tests": self.hidden_tests,
         }
         return json.dumps(task).encode("utf-8")

@@ -5,6 +5,11 @@ Code Colosseum agent.
 Reads a problem from /sandbox/.arena/task.json, calls the LLM through the
 Arena proxy, writes /sandbox/solution.py, and signals completion.
 
+The agent supports a simple reflection loop: after the first code generation,
+it runs the public tests and feeds any failures back to the LLM for a fixed
+number of retries.  This showcases Arena's ability to capture multi-turn
+agent trajectories.
+
 The task.json format expected by this agent:
 {
   "problem": {
@@ -14,12 +19,14 @@ The task.json format expected by this agent:
     "function_signature": "def two_sum(...):",
     "language": "python"
   },
+  "public_tests": "# pytest content",
   "hidden_tests": "# pytest content"
 }
 """
 
 import json
 import os
+import subprocess
 import sys
 import time
 import traceback
@@ -29,6 +36,7 @@ import urllib.request
 
 MAX_LLM_RETRIES = 3
 LLM_TIMEOUT_SECONDS = 120
+MAX_REFLECTION_ITERATIONS = int(os.environ.get("MAX_REFLECTION_ITERATIONS", "2"))
 
 
 def chat_completion(
@@ -89,8 +97,6 @@ def call_llm_with_retry(
             last_error = str(e)
             print(f"LLM call attempt {attempt}/{retries} failed: {e}", file=sys.stderr)
             if attempt < retries:
-                import time
-
                 time.sleep(0.5 * attempt)
     return "", {"error": last_error}
 
@@ -121,6 +127,48 @@ def write_result(status: str, reward: float, stdout: str, stderr: str) -> None:
         f.write(json.dumps({"status": status}))
 
 
+def run_public_tests() -> tuple[bool, str, str]:
+    """Run public_tests.py and return (passed, stdout, stderr)."""
+    if not os.path.exists("/sandbox/public_tests.py"):
+        return True, "", "no public tests"
+    try:
+        result = subprocess.run(
+            ["python", "-m", "pytest", "public_tests.py", "-q"],
+            cwd="/sandbox",
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        return result.returncode == 0, result.stdout, result.stderr
+    except Exception as e:
+        return False, "", str(e)
+
+
+def build_initial_prompt(title: str, description: str, signature: str) -> str:
+    return (
+        f"Solve the following coding problem.\n\n"
+        f"Title: {title}\n\n"
+        f"Description:\n{description}\n\n"
+        f"Function signature:\n{signature}\n\n"
+        f"Write a complete Python solution. Respond ONLY with a Python code block. "
+        f"Do not include explanations."
+    )
+
+
+def build_reflection_prompt(
+    title: str, description: str, signature: str, code: str, stdout: str, stderr: str
+) -> str:
+    return (
+        f"The following Python solution for '{title}' failed some public tests.\n\n"
+        f"Description:\n{description}\n\n"
+        f"Function signature:\n{signature}\n\n"
+        f"Current code:\n```python\n{code}\n```\n\n"
+        f"Test output:\n```\n{stdout}\n{stderr}\n```\n\n"
+        f"Fix the code so it passes the tests. Respond ONLY with a corrected "
+        f"Python code block. Do not include explanations."
+    )
+
+
 def main() -> int:
     base_url = os.environ.get("OPENAI_BASE_URL", "").rstrip("/")
     token = os.environ.get("ARENA_ROLLOUT_TOKEN", "")
@@ -131,12 +179,14 @@ def main() -> int:
 
     task_path = "/sandbox/.arena/task.json"
     problem = {}
+    public_tests = ""
     hidden_tests = ""
     if os.path.exists(task_path):
         try:
             with open(task_path) as f:
                 task = json.load(f)
             problem = task.get("problem", {})
+            public_tests = task.get("public_tests", "")
             hidden_tests = task.get("hidden_tests", "")
         except (json.JSONDecodeError, OSError) as e:
             print(f"Failed to read task.json: {e}", file=sys.stderr)
@@ -147,48 +197,65 @@ def main() -> int:
     description = problem.get("description", "")
     signature = problem.get("function_signature", "def solve():")
 
-    prompt = (
-        f"Solve the following coding problem.\n\n"
-        f"Title: {title}\n\n"
-        f"Description:\n{description}\n\n"
-        f"Function signature:\n{signature}\n\n"
-        f"Write a complete Python solution. Respond ONLY with a Python code block. "
-        f"Do not include explanations."
-    )
-
-    print(f"Prompt:\n{prompt[:200]}...")
-
-    content = ""
-    logprobs_info = {}
-    if base_url:
-        model = os.environ.get("ARENA_LLM_MODEL", "policy")
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are an expert competitive programmer. "
-                    "Respond ONLY with a Python code block containing the solution. "
-                    "No explanation, no markdown outside the code block."
-                ),
-            },
-            {"role": "user", "content": prompt},
-        ]
-        content, logprobs_info = call_llm_with_retry(base_url, token, model, messages)
-        print(f"Generated:\n{content[:300]}...")
-    else:
+    if not base_url:
         print("OPENAI_BASE_URL not set, skipping LLM calls")
-
-    code = extract_code(content)
+        write_result("failed", 0.0, "", "OPENAI_BASE_URL not set")
+        return 1
 
     os.makedirs("/sandbox/.arena", exist_ok=True)
-    with open("/sandbox/solution.py", "w") as f:
-        f.write(code)
-    print("Written /sandbox/solution.py")
-
+    if public_tests:
+        with open("/sandbox/public_tests.py", "w") as f:
+            f.write(public_tests)
+        print("Written /sandbox/public_tests.py")
     if hidden_tests:
         with open("/sandbox/hidden_tests.py", "w") as f:
             f.write(hidden_tests)
         print("Written /sandbox/hidden_tests.py")
+
+    model = os.environ.get("ARENA_LLM_MODEL", "policy")
+    system_message = {
+        "role": "system",
+        "content": (
+            "You are an expert competitive programmer. "
+            "Respond ONLY with a Python code block containing the solution. "
+            "No explanation, no markdown outside the code block."
+        ),
+    }
+    messages = [
+        system_message,
+        {
+            "role": "user",
+            "content": build_initial_prompt(title, description, signature),
+        },
+    ]
+
+    code = ""
+    logprobs_info = {}
+    for iteration in range(MAX_REFLECTION_ITERATIONS + 1):
+        print(f"\n--- Reflection iteration {iteration} ---")
+        content, logprobs_info = call_llm_with_retry(base_url, token, model, messages)
+        if not content:
+            print("No content from LLM", file=sys.stderr)
+            break
+
+        code = extract_code(content)
+        print(f"Generated:\n{code[:300]}...")
+
+        with open("/sandbox/solution.py", "w") as f:
+            f.write(code)
+        print("Written /sandbox/solution.py")
+
+        passed, stdout, stderr = run_public_tests()
+        print(f"Public tests passed: {passed}")
+        if passed:
+            break
+
+        if iteration < MAX_REFLECTION_ITERATIONS:
+            reflect_prompt = build_reflection_prompt(
+                title, description, signature, code, stdout, stderr
+            )
+            messages.append({"role": "assistant", "content": f"```python\n{code}\n```"})
+            messages.append({"role": "user", "content": reflect_prompt})
 
     if logprobs_info:
         with open("/sandbox/.arena/response.json", "w") as f:
