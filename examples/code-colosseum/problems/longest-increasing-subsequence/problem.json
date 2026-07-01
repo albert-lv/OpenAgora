@@ -1,0 +1,11 @@
+{
+  "id": "longest-increasing-subsequence",
+  "title": "Longest Increasing Subsequence",
+  "difficulty": "medium",
+  "tags": ["dp", "binary-search"],
+  "description": "Given an integer array nums, return the length of the longest strictly increasing subsequence.\nA subsequence is a sequence that can be derived from an array by deleting some or no elements without changing the order of the remaining elements.",
+  "function_signature": "def length_of_lis(nums: list[int]) -> int:",
+  "language": "python",
+  "time_limit_ms": 1000,
+  "memory_limit_mb": 256
+}

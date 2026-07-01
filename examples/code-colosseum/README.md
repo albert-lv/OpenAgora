@@ -38,7 +38,14 @@ examples/code-colosseum/
 ├── problems/                       # problem bank (JSON + tests)
 │   ├── two-sum/
 │   ├── reverse-string/
-│   └── longest-common-prefix/
+│   ├── longest-common-prefix/
+│   ├── valid-parentheses/
+│   ├── maximum-subarray/
+│   ├── climbing-stairs/
+│   ├── coin-change/
+│   ├── word-break/
+│   ├── longest-increasing-subsequence/
+│   └── edit-distance/
 ├── agent/                          # sandbox agent + mock LLM
 ├── backend/                        # FastAPI orchestrator
 ├── dashboard/                      # React dashboard
@@ -219,7 +226,10 @@ npm run dev
 
 ## Extending the Demo
 
-- Add problems by creating new directories under `problems/`.
+- Add problems by creating new directories under `problems/`.  Each problem
+  needs `problem.json`, `solution.py`, `public_tests.py`, and `hidden_tests.py`.
+- Import more HumanEval tasks with `scripts/import_humaneval.py` (requires
+  network access to download the dataset).
 - Swap the built-in policy LLM server for an external backend (vLLM, SGLang,
   Ollama) by setting `ARENA_LLM_BACKEND`.
 - The mock LLM returns controlled variants by default.  Set `DISABLE_VARIANTS=1`

@@ -1,0 +1,11 @@
+{
+  "id": "maximum-subarray",
+  "title": "Maximum Subarray",
+  "difficulty": "medium",
+  "tags": ["array", "dp", "greedy"],
+  "description": "Given an integer array nums, find the contiguous subarray (containing at least one number) which has the largest sum and return its sum.\nThe subarray must be non-empty.",
+  "function_signature": "def max_sub_array(nums: list[int]) -> int:",
+  "language": "python",
+  "time_limit_ms": 1000,
+  "memory_limit_mb": 256
+}

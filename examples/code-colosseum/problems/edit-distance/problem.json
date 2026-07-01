@@ -1,0 +1,11 @@
+{
+  "id": "edit-distance",
+  "title": "Edit Distance",
+  "difficulty": "hard",
+  "tags": ["dp", "string"],
+  "description": "Given two strings word1 and word2, return the minimum number of operations required to convert word1 to word2.\nYou have the following three operations permitted on a word:\n- Insert a character\n- Delete a character\n- Replace a character",
+  "function_signature": "def min_distance(word1: str, word2: str) -> int:",
+  "language": "python",
+  "time_limit_ms": 1000,
+  "memory_limit_mb": 256
+}

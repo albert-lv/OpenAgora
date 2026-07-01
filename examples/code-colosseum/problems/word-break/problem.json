@@ -1,0 +1,11 @@
+{
+  "id": "word-break",
+  "title": "Word Break",
+  "difficulty": "medium",
+  "tags": ["dp", "string"],
+  "description": "Given a string s and a dictionary of strings wordDict, return true if s can be segmented into a space-separated sequence of one or more dictionary words.\nThe same word in the dictionary may be reused multiple times in the segmentation.",
+  "function_signature": "def word_break(s: str, word_dict: list[str]) -> bool:",
+  "language": "python",
+  "time_limit_ms": 1000,
+  "memory_limit_mb": 256
+}
