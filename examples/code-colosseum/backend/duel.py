@@ -6,7 +6,11 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Optional
 
-from backend.arena_client_wrapper import ArenaWrapper, extract_code_from_trajectory
+from backend.arena_client_wrapper import (
+    ArenaWrapper,
+    extract_code_from_trajectory,
+    extract_usage_from_trajectory,
+)
 from backend.problems import Problem
 
 
@@ -25,6 +29,14 @@ class DuelAgent:
     verification_report: Optional[dict] = None
     stdout: str = ""
     stderr: str = ""
+    usage: dict = field(
+        default_factory=lambda: {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "steps": 0,
+        }
+    )
 
 
 @dataclass
@@ -202,10 +214,11 @@ class DuelEngine:
                     agent.stdout = agent.verification_report.get("stdout", "")
                     agent.stderr = agent.verification_report.get("stderr", "")
 
-                # Fetch code from trajectory.
+                # Fetch code and token usage from trajectory.
                 try:
                     trajectory = self.arena.get_trajectory(agent.rollout_id)
                     agent.code = extract_code_from_trajectory(trajectory)
+                    agent.usage = extract_usage_from_trajectory(trajectory)
                 except Exception as e:
                     agent.code = f"# failed to extract code: {e}"
 
@@ -218,6 +231,7 @@ class DuelEngine:
                         "code": agent.code,
                         "stdout": agent.stdout,
                         "stderr": agent.stderr,
+                        "usage": agent.usage,
                     }
                 )
                 break
@@ -318,11 +332,13 @@ class DuelEngine:
                     "name": d.agent_a.name,
                     "status": d.agent_a.status,
                     "reward": d.agent_a.reward,
+                    "usage": d.agent_a.usage,
                 },
                 "agent_b": {
                     "name": d.agent_b.name,
                     "status": d.agent_b.status,
                     "reward": d.agent_b.reward,
+                    "usage": d.agent_b.usage,
                 },
             }
             for d in sorted(
@@ -350,6 +366,7 @@ class DuelEngine:
                 "code": d.agent_a.code,
                 "stdout": d.agent_a.stdout,
                 "stderr": d.agent_a.stderr,
+                "usage": d.agent_a.usage,
             },
             "agent_b": {
                 "name": d.agent_b.name,
@@ -359,5 +376,6 @@ class DuelEngine:
                 "code": d.agent_b.code,
                 "stdout": d.agent_b.stdout,
                 "stderr": d.agent_b.stderr,
+                "usage": d.agent_b.usage,
             },
         }

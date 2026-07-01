@@ -113,6 +113,30 @@ def extract_code_from_trajectory(trajectory: list[dict]) -> str:
     return ""
 
 
+def extract_usage_from_trajectory(trajectory: list[dict]) -> dict:
+    """Sum prompt/completion tokens across all trajectory steps.
+
+    Returns a dict with prompt_tokens, completion_tokens, total_tokens, and
+    steps (number of LLM calls).  The proxy records usage per response.
+    """
+    prompt = 0
+    completion = 0
+    steps = 0
+    for step in trajectory:
+        response = step.get("response") or {}
+        usage = response.get("usage") or {}
+        if usage:
+            prompt += int(usage.get("prompt_tokens", 0))
+            completion += int(usage.get("completion_tokens", 0))
+            steps += 1
+    return {
+        "prompt_tokens": prompt,
+        "completion_tokens": completion,
+        "total_tokens": prompt + completion,
+        "steps": steps,
+    }
+
+
 def _extract_code_block(content: str) -> str:
     if "```python" in content:
         return content.split("```python")[1].split("```")[0].strip()

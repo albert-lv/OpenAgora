@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import Editor from '@monaco-editor/react'
 import { useApi } from '../hooks/useApi'
 import { useSSE } from '../hooks/useSSE'
-import type { Duel, Problem, SSEEvent } from '../types'
+import type { Duel, DuelAgent, Problem, SSEEvent } from '../types'
 
 interface Props {
   duelId: string | null
@@ -38,6 +38,7 @@ export function ArenaStage({ duelId, problem }: Props) {
         agent.code = (latest.code as string) ?? ''
         agent.stdout = (latest.stdout as string) ?? ''
         agent.stderr = (latest.stderr as string) ?? ''
+        agent.usage = (latest.usage as DuelAgent['usage']) ?? agent.usage
       }
       if (latest.type === 'completed') {
         next.status = 'completed'
@@ -128,8 +129,19 @@ function AgentCard({ agent }: { agent: Duel['agent_a'] }) {
         <h3 className="font-bold">{agent.name}</h3>
         <span className={`font-mono text-sm ${statusColor}`}>{agent.status}</span>
       </div>
-      <div className="mb-2 text-sm">
-        Reward: <span className="font-mono font-semibold text-green-400">{agent.reward.toFixed(2)}</span>
+      <div className="mb-2 text-sm space-x-3">
+        <span>
+          Reward: <span className="font-mono font-semibold text-green-400">{agent.reward.toFixed(2)}</span>
+        </span>
+        {agent.usage && agent.usage.total_tokens > 0 && (
+          <span className="text-slate-400">
+            Tokens:{' '}
+            <span className="font-mono text-slate-200">
+              {agent.usage.total_tokens.toLocaleString()}
+            </span>{' '}
+            <span className="text-xs">({agent.usage.steps} call{agent.usage.steps === 1 ? '' : 's'})</span>
+          </span>
+        )}
       </div>
       <div className="rounded-lg border border-slate-700 overflow-hidden" style={{ minHeight: 320 }}>
         <Editor

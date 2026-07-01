@@ -8,6 +8,13 @@ export interface Problem {
   language: string
 }
 
+export interface UsageInfo {
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  steps: number
+}
+
 export interface DuelAgent {
   name: string
   rollout_id?: string
@@ -16,6 +23,7 @@ export interface DuelAgent {
   code?: string
   stdout?: string
   stderr?: string
+  usage?: UsageInfo
 }
 
 export interface Duel {

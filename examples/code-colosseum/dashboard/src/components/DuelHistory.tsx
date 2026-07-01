@@ -43,6 +43,11 @@ export function DuelHistory({ onSelect, selectedId }: Props) {
                 {duel.agent_a.name}: {duel.agent_a.reward.toFixed(2)} vs{' '}
                 {duel.agent_b.name}: {duel.agent_b.reward.toFixed(2)}
               </div>
+              {(duel.agent_a.usage?.total_tokens || duel.agent_b.usage?.total_tokens) ? (
+                <div className="text-xs text-slate-500 mt-1">
+                  Tokens: {(duel.agent_a.usage?.total_tokens || 0).toLocaleString()} / {(duel.agent_b.usage?.total_tokens || 0).toLocaleString()}
+                </div>
+              ) : null}
               {duel.winner && (
                 <div className="text-xs text-yellow-400 mt-1">Winner: {duel.winner}</div>
               )}
