@@ -12,12 +12,19 @@ repos:
         exclude: '^(examples/code-colosseum/dashboard/node_modules|examples/code-colosseum/dashboard/dist|.*\.lock)/'
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.5.0
+    rev: v0.6.9
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
-        files: ^(python/openagora-(verl|sdk)/|examples/code-colosseum/.*\.py$)
+        files: ^(python/openagora-(verl|sdk|cli)/|examples/code-colosseum/.*\.py$)
         exclude: '.*_pb2(_grpc)?\.py$'
       - id: ruff-format
-        files: ^(python/openagora-(verl|sdk)/|examples/code-colosseum/.*\.py$)
+        files: ^(python/openagora-(verl|sdk|cli)/|examples/code-colosseum/.*\.py$)
         exclude: '.*_pb2(_grpc)?\.py$'
+
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      - id: go-fmt
+        args: [-w]
+        files: ^go/.*\.go$

@@ -6,10 +6,11 @@ import (
 	"testing"
 	"time"
 
-	arena_pb "github.com/albert-lv/OpenAgora/go/proto/openagora/v1"
 	"github.com/albert-lv/OpenAgora/go/pkg/sandbox"
 	"github.com/albert-lv/OpenAgora/go/pkg/trajectory"
 	"github.com/albert-lv/OpenAgora/go/pkg/trajectory/backend"
+	"github.com/albert-lv/OpenAgora/go/pkg/verify"
+	arena_pb "github.com/albert-lv/OpenAgora/go/proto/openagora/v1"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/metadata"
 )
@@ -81,20 +82,28 @@ func (m *mockSandboxProvider) Logs(ctx context.Context, id string, tail int) ([]
 	return []byte("mock logs"), nil
 }
 
-// mockVerifyRunner is a verification runner for testing.
-type mockVerifyRunner struct {
-	rewards []float64
-	err     error
+func (m *mockSandboxProvider) Capabilities() sandbox.CapabilitySet {
+	return sandbox.CapabilitySet{FileTransfer: true, Mounted: true}
 }
 
-func (m *mockVerifyRunner) Run(ctx context.Context, sandboxID string, command string) ([]float64, error) {
-	return m.rewards, m.err
+// mockVerifyRunner is a verification runner for testing.
+type mockVerifyRunner struct {
+	report *verify.VerificationReport
+	err    error
+}
+
+func (m *mockVerifyRunner) Run(ctx context.Context, provider sandbox.Provider, spec *verify.VerificationSpec, sandboxID string) (*verify.VerificationReport, error) {
+	return m.report, m.err
 }
 
 func TestCreateRollout(t *testing.T) {
 	logger := zap.NewNop()
 	sp := newMockSandboxProvider()
-	vr := &mockVerifyRunner{rewards: []float64{0.95}}
+	vr := &mockVerifyRunner{report: &verify.VerificationReport{
+		TotalReward: 0.95,
+		Reward:      0.95,
+		Rewards:     []verify.Reward{{Name: "test", Value: 0.95}},
+	}}
 
 	srv := New(logger, &ServerConfig{
 		SandboxProvider: sp,
@@ -145,6 +154,12 @@ func TestCreateRollout(t *testing.T) {
 	}
 	if rollout.Reward != 0.95 {
 		t.Fatalf("expected reward 0.95, got %f", rollout.Reward)
+	}
+	if rollout.VerificationReport == nil {
+		t.Fatal("expected verification report")
+	}
+	if len(rollout.VerificationReport.Rewards) != 1 {
+		t.Fatalf("expected 1 reward, got %d", len(rollout.VerificationReport.Rewards))
 	}
 
 	// Verify sandbox provider calls.
@@ -320,8 +335,8 @@ func (m *mockStream) Send(step *arena_pb.TrajectoryStep) error {
 
 func (m *mockStream) Context() context.Context { return m.ctx }
 
-func (m *mockStream) SendMsg(msg any) error   { return nil }
-func (m *mockStream) RecvMsg(msg any) error   { return nil }
+func (m *mockStream) SendMsg(msg any) error           { return nil }
+func (m *mockStream) RecvMsg(msg any) error           { return nil }
 func (m *mockStream) SetHeader(md metadata.MD) error  { return nil }
 func (m *mockStream) SendHeader(md metadata.MD) error { return nil }
-func (m *mockStream) SetTrailer(md metadata.MD)      {}
+func (m *mockStream) SetTrailer(md metadata.MD)       {}

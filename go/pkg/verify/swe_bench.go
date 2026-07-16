@@ -19,10 +19,10 @@ func NewSWEBenchVerifier() *SWEBenchVerifier {
 	return &SWEBenchVerifier{
 		parsers: map[string]TestFrameworkParser{
 			"pytest": PytestParser{},
-			"jest":    JestParser{},
-			"go":      GoTestParser{},
-			"cargo":   CargoParser{},
-			"maven":   MavenParser{},
+			"jest":   JestParser{},
+			"go":     GoTestParser{},
+			"cargo":  CargoParser{},
+			"maven":  MavenParser{},
 		},
 	}
 }
@@ -93,6 +93,7 @@ func (s *SWEBenchVerifier) Run(ctx context.Context, provider sandbox.Provider, s
 	report := s.diff(baselineCases, patchCases, spec.PassToPass, spec.FailToPass)
 	report.Stdout = string(patchRes.Stdout)
 	report.Stderr = string(patchRes.Stderr)
+	finalizeReport(report)
 	return report, nil
 }
 
@@ -237,6 +238,18 @@ func computeReward(r *VerificationReport) float64 {
 		}
 	}
 	return score
+}
+
+// finalizeReport populates reward fields from SWE-bench counts.
+func finalizeReport(r *VerificationReport) {
+	r.ComputeCounts()
+	r.Reward = computeReward(r)
+	r.TotalReward = r.Reward
+	r.Rewards = []Reward{{
+		Name:   "swe_bench",
+		Value:  r.Reward,
+		Source: "verifier:swe-bench",
+	}}
 }
 
 func unionSets(a, b []string) map[string]bool {

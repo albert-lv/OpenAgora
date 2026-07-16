@@ -1,0 +1,13 @@
+[[reward]]
+name = "correctness"
+weight = 0.7
+verifier_dir = "tests/correctness"
+command = "python -c \"import sys; sys.path.insert(0, 'tests/correctness'); import solution; assert solution.hello() == 'hello, world!'\""
+aggregation = "all_pass"
+
+[[reward]]
+name = "style"
+weight = 0.3
+verifier_dir = "tests/style"
+command = "python -m py_compile /sandbox/solution.py"
+aggregation = "all_pass"

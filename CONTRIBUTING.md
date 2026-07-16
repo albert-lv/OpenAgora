@@ -123,8 +123,19 @@ make docker-server  # Build server Docker image
 make docker-agent   # Build minimal agent Docker image
 make test           # Run Go + Python tests
 make sdk-test       # Run Python tests only
+make install-hooks  # Install pre-commit git hooks
 make dev            # Start local development server
 ```
+
+### Git Hooks
+
+Install the pre-commit hooks to run lint/format checks locally before each commit:
+
+```bash
+make install-hooks
+```
+
+This prevents the `arena: command not found` / `langsmith: command not found` messages that can occur when an inconsistent or missing hook configuration is present.
 
 ---
 

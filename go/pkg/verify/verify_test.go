@@ -15,15 +15,58 @@ type mockProvider struct {
 func (m *mockProvider) Create(ctx context.Context, config *sandbox.Config) (*sandbox.Sandbox, error) {
 	return nil, nil
 }
-func (m *mockProvider) Start(ctx context.Context, id string) error  { return nil }
-func (m *mockProvider) Stop(ctx context.Context, id string) error   { return nil }
+func (m *mockProvider) Start(ctx context.Context, id string) error             { return nil }
+func (m *mockProvider) Stop(ctx context.Context, id string) error              { return nil }
 func (m *mockProvider) Destroy(ctx context.Context, sb *sandbox.Sandbox) error { return nil }
-func (m *mockProvider) WaitForDone(ctx context.Context, id string) error { return nil }
+func (m *mockProvider) WaitForDone(ctx context.Context, id string) error       { return nil }
 func (m *mockProvider) Logs(ctx context.Context, id string, tail int) ([]byte, error) {
 	return nil, nil
 }
 func (m *mockProvider) Exec(ctx context.Context, id string, cmd []string) (*sandbox.ExecResult, error) {
 	return m.execResult, m.execErr
+}
+
+func (m *mockProvider) Capabilities() sandbox.CapabilitySet {
+	return sandbox.CapabilitySet{FileTransfer: true}
+}
+
+func TestMultiRewardVerifier(t *testing.T) {
+	mp := &mockProvider{
+		execResult: &sandbox.ExecResult{ExitCode: 0, Stdout: []byte("ok"), Stderr: []byte(``)},
+	}
+	v := &multiRewardVerifier{}
+	spec := &VerificationSpec{
+		Rewards: []RewardSpec{
+			{Name: "correctness", Weight: 0.7, Command: "true", Aggregation: "all_pass"},
+			{Name: "style", Weight: 0.3, Command: "true", Aggregation: "all_pass"},
+		},
+	}
+	report, err := v.Run(context.Background(), mp, spec, "sb1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(report.Rewards) != 2 {
+		t.Fatalf("expected 2 rewards, got %d", len(report.Rewards))
+	}
+	if report.TotalReward != 1.0 {
+		t.Fatalf("expected total reward 1.0, got %f", report.TotalReward)
+	}
+}
+
+func TestResolveMultiReward(t *testing.T) {
+	spec := &VerificationSpec{
+		Rewards: []RewardSpec{
+			{Name: "a", Weight: 0.5},
+			{Name: "b", Weight: 0.5},
+		},
+	}
+	v, err := Resolve(spec)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if v.Name() != "multi-reward" {
+		t.Fatalf("expected multi-reward verifier, got %s", v.Name())
+	}
 }
 
 func TestRunnerSuccess(t *testing.T) {
@@ -54,6 +97,43 @@ func TestRunnerFailure(t *testing.T) {
 	}
 }
 
+func TestTotalRewardWeighted(t *testing.T) {
+	rewards := []Reward{
+		{Name: "correctness", Value: 1.0, Weight: 0.6},
+		{Name: "style", Value: 0.8, Weight: 0.3},
+		{Name: "efficiency", Value: 0.5, Weight: 0.1},
+	}
+	total := TotalReward(rewards)
+	want := 1.0*0.6 + 0.8*0.3 + 0.5*0.1
+	if total < want-1e-9 || total > want+1e-9 {
+		t.Fatalf("expected %f, got %f", want, total)
+	}
+}
+
+func TestTotalRewardUnweighted(t *testing.T) {
+	rewards := []Reward{{Value: 0.5}, {Value: 1.0}}
+	if got := TotalReward(rewards); got != 0.75 {
+		t.Fatalf("expected 0.75, got %f", got)
+	}
+}
+
+func TestLegacyVerifierMultiReward(t *testing.T) {
+	mp := &mockProvider{
+		execResult: &sandbox.ExecResult{ExitCode: 0, Stdout: []byte("ok"), Stderr: []byte(``)},
+	}
+	v := &legacyVerifier{}
+	report, err := v.Run(context.Background(), mp, &VerificationSpec{Command: "bash /sandbox/verify.sh"}, "sb1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if report.TotalReward != 1.0 {
+		t.Fatalf("expected total reward 1.0, got %f", report.TotalReward)
+	}
+	if len(report.Rewards) != 1 {
+		t.Fatalf("expected 1 reward, got %d", len(report.Rewards))
+	}
+}
+
 func TestRunnerWithCustomRewards(t *testing.T) {
 	mpWithRewards := &mockProviderWithCounter{}
 
@@ -74,10 +154,10 @@ type mockProviderWithCounter struct {
 func (m *mockProviderWithCounter) Create(ctx context.Context, config *sandbox.Config) (*sandbox.Sandbox, error) {
 	return nil, nil
 }
-func (m *mockProviderWithCounter) Start(ctx context.Context, id string) error  { return nil }
-func (m *mockProviderWithCounter) Stop(ctx context.Context, id string) error   { return nil }
+func (m *mockProviderWithCounter) Start(ctx context.Context, id string) error             { return nil }
+func (m *mockProviderWithCounter) Stop(ctx context.Context, id string) error              { return nil }
 func (m *mockProviderWithCounter) Destroy(ctx context.Context, sb *sandbox.Sandbox) error { return nil }
-func (m *mockProviderWithCounter) WaitForDone(ctx context.Context, id string) error { return nil }
+func (m *mockProviderWithCounter) WaitForDone(ctx context.Context, id string) error       { return nil }
 func (m *mockProviderWithCounter) Logs(ctx context.Context, id string, tail int) ([]byte, error) {
 	return nil, nil
 }
@@ -90,6 +170,10 @@ func (m *mockProviderWithCounter) Exec(ctx context.Context, id string, cmd []str
 		ExitCode: 0,
 		Stdout:   []byte(`{"type":"task_complete","value":0.8,"source":"agent"}` + "\n"),
 	}, nil
+}
+
+func (m *mockProviderWithCounter) Capabilities() sandbox.CapabilitySet {
+	return sandbox.CapabilitySet{FileTransfer: true}
 }
 
 func TestRunnerNoProvider(t *testing.T) {

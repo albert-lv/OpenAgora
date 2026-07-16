@@ -34,6 +34,9 @@ message Reward {
   float value = 2;
   string source = 3;
   bytes detail_json = 4;
+  // name and weight support multi-dimensional scoring (e.g. correctness, style).
+  string name = 5;
+  float weight = 6;
 }
 
 message Usage {

@@ -7,7 +7,7 @@ proto:
 	mkdir -p go/proto/openagora/v1
 	mv go/openagora/v1/*.pb.go go/proto/openagora/v1/ || true
 	rm -rf go/openagora
-	python3 -m grpc_tools.protoc \
+	python/openagora-sdk/.venv/bin/python -m grpc_tools.protoc \
 		--python_out=python/openagora-sdk/src --grpc_python_out=python/openagora-sdk/src \
 		-I proto proto/openagora/v1/*.proto
 
@@ -15,6 +15,12 @@ proto:
 .PHONY: build
 build:
 	cd go && go build -o ../bin/openagora-server ./cmd/openagora-server
+
+# Build Arena CLI (Python)
+.PHONY: build-cli
+build-cli:
+	cd python/openagora-cli && (uv venv .venv 2>/dev/null || true) && uv pip install -e . --reinstall-package openagora-sdk --python .venv/bin/python
+	@echo "arena CLI installed at python/openagora-cli/.venv/bin/arena"
 
 # Build Demo binary (built-in Docker provider + mock LLM for quick validation)
 .PHONY: demo
@@ -60,15 +66,25 @@ sdk-install:
 
 .PHONY: sdk-test
 sdk-test:
-	cd python/openagora-sdk && uv run pytest
-	cd python/openagora-verl && uv run pytest
-	cd python/openagora-verify && uv run pytest
+	cd python/openagora-sdk && .venv/bin/python -m pytest
+	cd python/openagora-verl && .venv/bin/python -m pytest
+	cd python/openagora-verify && .venv/bin/python -m pytest
+
+.PHONY: cli-test
+cli-test:
+	cd python/openagora-cli && .venv/bin/python -m pytest tests/
+
+# Install git hooks for local lint/format checks
+.PHONY: install-hooks
+install-hooks:
+	.venv/bin/pre-commit install
 
 # Full tests
 .PHONY: test
 test:
 	cd go && go test ./...
 	$(MAKE) sdk-test
+	$(MAKE) cli-test
 
 # Local dev stack
 .PHONY: dev

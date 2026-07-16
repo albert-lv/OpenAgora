@@ -17,6 +17,8 @@ type Backend interface {
 // NopBackend is a no-op backend for testing.
 type NopBackend struct{}
 
-func (NopBackend) Write(ctx context.Context, rolloutID string, step *trajectory.Step) error { return nil }
-func (NopBackend) Read(ctx context.Context, rolloutID string, w io.Writer) error           { return nil }
-func (NopBackend) Close(ctx context.Context) error                                         { return nil }
+func (NopBackend) Write(ctx context.Context, rolloutID string, step *trajectory.Step) error {
+	return nil
+}
+func (NopBackend) Read(ctx context.Context, rolloutID string, w io.Writer) error { return nil }
+func (NopBackend) Close(ctx context.Context) error                               { return nil }

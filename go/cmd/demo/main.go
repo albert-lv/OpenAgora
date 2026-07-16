@@ -8,11 +8,12 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
-	arena_pb "github.com/albert-lv/OpenAgora/go/proto/openagora/v1"
 	docker "github.com/albert-lv/OpenAgora/go/pkg/sandbox/docker"
 	"github.com/albert-lv/OpenAgora/go/pkg/server"
+	arena_pb "github.com/albert-lv/OpenAgora/go/proto/openagora/v1"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -65,13 +66,25 @@ func main() {
 	fmt.Println("Proxy URL: ", resp.ProxyUrl)
 
 	// 5. Simulate agent calling proxy (2 requests) with correct token.
+	// The server advertises host.docker.internal for containers; use the local
+	// loopback address with the same port for the host-side agent simulation.
 	time.Sleep(200 * time.Millisecond)
+	proxyHostPort := strings.TrimPrefix(strings.TrimSuffix(resp.ProxyUrl, "/v1"), "http://")
+	proxyHost, proxyPort, err := net.SplitHostPort(proxyHostPort)
+	if err != nil {
+		logger.Fatal("invalid proxy URL", zap.String("url", resp.ProxyUrl), zap.Error(err))
+	}
+	_ = proxyHost
+	localProxyURL := fmt.Sprintf("http://127.0.0.1:%s/v1", proxyPort)
 	for i := 0; i < 2; i++ {
 		body, _ := json.Marshal(map[string]any{"model": "gpt-4", "messages": []any{}})
-		req, _ := http.NewRequest("POST", resp.ProxyUrl+"/chat/completions", bytes.NewReader(body))
+		req, _ := http.NewRequest("POST", localProxyURL+"/chat/completions", bytes.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+resp.Token)
 		req.Header.Set("Content-Type", "application/json")
-		r, _ := http.DefaultClient.Do(req)
+		r, err := http.DefaultClient.Do(req)
+		if err != nil {
+			logger.Fatal("agent proxy call failed", zap.Error(err))
+		}
 		_, _ = io.Copy(io.Discard, r.Body)
 		_ = r.Body.Close()
 		fmt.Printf("Agent call %d: %s\n", i+1, r.Status)

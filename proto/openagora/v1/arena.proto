@@ -76,6 +76,15 @@ message SandboxConfig {
   map<string, string> env_vars = 4;
   bytes task_file = 5;
   int32 timeout_seconds = 6;
+  repeated string command = 7;
+}
+
+message RewardSpec {
+  string name = 1;
+  float weight = 2;
+  string verifier_dir = 3;
+  string command = 4;
+  string aggregation = 5;
 }
 
 message VerifyConfig {
@@ -93,6 +102,7 @@ message VerifyConfig {
   string patch_command = 9;       // tests after the agent patch
   int32 timeout_seconds = 10;     // per-command timeout
   string working_directory = 11;  // e.g. "/testbed"
+  repeated RewardSpec rewards = 12;
 }
 
 message TestCaseResult {
@@ -103,7 +113,8 @@ message TestCaseResult {
 }
 
 message VerificationReport {
-  float reward = 1;
+  // Deprecated: use total_reward and rewards instead.
+  float reward = 1 [deprecated = true];
   int32 f2p_count = 2;
   int32 p2p_count = 3;
   int32 f2f_count = 4;
@@ -111,4 +122,6 @@ message VerificationReport {
   repeated TestCaseResult test_cases = 6;
   string stdout = 7;
   string stderr = 8;
+  repeated Reward rewards = 9;
+  float total_reward = 10;
 }

@@ -53,11 +53,20 @@ Any agent that follows this contract can run in Arena, regardless of language or
 
 ## rewards.jsonl Format
 
-Each line is a JSON object:
+Each line is a JSON object. OpenAgora supports multi-dimensional rewards:
 
 ```json
-{"type": "task_complete", "value": 1.0, "source": "agent:manual"}
+{"name": "task_complete", "value": 1.0, "weight": 1.0, "source": "agent:manual"}
+{"name": "style", "value": 0.8, "weight": 0.3, "source": "agent:rubric"}
 ```
+
+Fields:
+- `name` — reward dimension (e.g. `correctness`, `style`, `efficiency`).
+- `value` — numeric score, typically 0.0–1.0.
+- `weight` — optional weight used when aggregating multiple rewards.
+- `source` — who/what produced the score.
+
+The server aggregates all rewards into a `total_reward` for the rollout.
 
 ## Environment Variables
 

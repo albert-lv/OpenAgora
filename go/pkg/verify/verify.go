@@ -26,6 +26,88 @@ func RegisterDefault() {
 	Register("legacy", &legacyVerifier{})
 }
 
+// multiRewardVerifier runs multiple independent verifiers and aggregates their
+// scores into a single VerificationReport with multiple Reward dimensions.
+type multiRewardVerifier struct{}
+
+func (m *multiRewardVerifier) Name() string { return "multi-reward" }
+
+func (m *multiRewardVerifier) Run(ctx context.Context, provider sandbox.Provider, spec *VerificationSpec, sandboxID string) (*VerificationReport, error) {
+	if provider == nil {
+		return nil, fmt.Errorf("sandbox provider not configured")
+	}
+	if spec == nil || len(spec.Rewards) == 0 {
+		return nil, fmt.Errorf("multi-reward verifier requires at least one reward spec")
+	}
+
+	var rewards []Reward
+	var stdout, stderr strings.Builder
+
+	for _, rw := range spec.Rewards {
+		cmd := rw.Command
+		if cmd == "" {
+			// Default to running tests under the verifier dir.
+			cmd = fmt.Sprintf("cd %s && pytest", rw.VerifierDir)
+		}
+
+		res, err := provider.Exec(ctx, sandboxID, []string{"sh", "-c", cmd})
+		if err != nil {
+			return nil, fmt.Errorf("exec reward %q: %w", rw.Name, err)
+		}
+
+		_, _ = fmt.Fprintf(&stdout, "\n=== %s ===\n", rw.Name)
+		stdout.Write(res.Stdout)
+		_, _ = fmt.Fprintf(&stderr, "\n=== %s ===\n", rw.Name)
+		stderr.Write(res.Stderr)
+
+		value := m.aggregate(rw.Aggregation, res.ExitCode, string(res.Stdout)+"\n"+string(res.Stderr))
+		rewards = append(rewards, Reward{
+			Name:   rw.Name,
+			Value:  value,
+			Weight: rw.Weight,
+			Source: fmt.Sprintf("verifier:%s", rw.Name),
+		})
+	}
+
+	total := TotalReward(rewards)
+	return &VerificationReport{
+		Reward:      total,
+		TotalReward: total,
+		Rewards:     rewards,
+		Stdout:      stdout.String(),
+		Stderr:      stderr.String(),
+	}, nil
+}
+
+func (m *multiRewardVerifier) aggregate(mode string, exitCode int, output string) float64 {
+	switch mode {
+	case "all_pass":
+		if exitCode == 0 {
+			return 1.0
+		}
+		return 0.0
+	case "max":
+		if exitCode == 0 {
+			return 1.0
+		}
+		return 0.0
+	case "mean":
+		// Try to parse a fraction from test output, fall back to pass/fail.
+		if v := ParsePytestDetailedOutput(output); v >= 0 {
+			return v
+		}
+		if exitCode == 0 {
+			return 1.0
+		}
+		return 0.0
+	default:
+		if exitCode == 0 {
+			return 1.0
+		}
+		return 0.0
+	}
+}
+
 // legacyVerifier implements the original single-command verification behavior.
 type legacyVerifier struct{}
 
@@ -49,32 +131,31 @@ func (l *legacyVerifier) Run(ctx context.Context, provider sandbox.Provider, spe
 	stderr := string(res.Stderr)
 	combined := stdout + "\n" + stderr
 
-	var reward float64
+	var rewards []Reward
 	switch mode {
 	case ModePytest:
-		reward = ParsePytestDetailedOutput(combined)
+		rewards = append(rewards, Reward{Name: "pytest", Value: ParsePytestDetailedOutput(combined), Source: "verifier:pytest"})
 	case ModeUnittest:
-		reward = ParseUnittestOutput(combined)
+		rewards = append(rewards, Reward{Name: "unittest", Value: ParseUnittestOutput(combined), Source: "verifier:unittest"})
 	case ModeScript, ModeCustom:
 		if res.ExitCode == 0 {
-			reward = 1.0
+			rewards = append(rewards, Reward{Name: "script", Value: 1.0, Source: "verifier:exit_code"})
 		} else {
-			reward = 0.0
+			rewards = append(rewards, Reward{Name: "script", Value: 0.0, Source: "verifier:exit_code"})
 		}
 	}
 
 	// Append agent-written custom rewards if present.
 	customRewards, _ := readRewardsJSONL(ctx, provider, sandboxID)
-	for _, r := range customRewards {
-		if r > reward {
-			reward = r
-		}
-	}
+	rewards = append(rewards, customRewards...)
 
+	total := TotalReward(rewards)
 	return &VerificationReport{
-		Reward: reward,
-		Stdout: stdout,
-		Stderr: stderr,
+		Reward:      total,
+		TotalReward: total,
+		Rewards:     rewards,
+		Stdout:      stdout,
+		Stderr:      stderr,
 	}, nil
 }
 
@@ -93,11 +174,11 @@ func NewRunner(provider sandbox.Provider) *Runner {
 type VerifyMode int
 
 const (
-	ModeUnknown VerifyMode = iota
-	ModePytest             // pytest with detailed pass/fail parsing
-	ModeUnittest           // python -m unittest
-	ModeScript             // generic shell script (exit code only)
-	ModeCustom             // agent-written rewards.jsonl only
+	ModeUnknown  VerifyMode = iota
+	ModePytest              // pytest with detailed pass/fail parsing
+	ModeUnittest            // python -m unittest
+	ModeScript              // generic shell script (exit code only)
+	ModeCustom              // agent-written rewards.jsonl only
 )
 
 // DetectMode guesses the verify mode from the command string.
@@ -145,12 +226,14 @@ func (r *Runner) Run(ctx context.Context, sandboxID string, command string) ([]f
 	}
 
 	customRewards, _ := readRewardsJSONL(ctx, r.provider, sandboxID)
-	rewards = append(rewards, customRewards...)
+	for _, rw := range customRewards {
+		rewards = append(rewards, rw.Value)
+	}
 
 	return rewards, nil
 }
 
-func readRewardsJSONL(ctx context.Context, provider sandbox.Provider, sandboxID string) ([]float64, error) {
+func readRewardsJSONL(ctx context.Context, provider sandbox.Provider, sandboxID string) ([]Reward, error) {
 	res, err := provider.Exec(ctx, sandboxID, []string{"cat", "/sandbox/.arena/rewards.jsonl"})
 	if err != nil {
 		return nil, err
@@ -159,7 +242,7 @@ func readRewardsJSONL(ctx context.Context, provider sandbox.Provider, sandboxID 
 		return nil, fmt.Errorf("rewards.jsonl not found")
 	}
 
-	var rewards []float64
+	var rewards []Reward
 	scanner := bufio.NewScanner(strings.NewReader(string(res.Stdout)))
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -168,13 +251,27 @@ func readRewardsJSONL(ctx context.Context, provider sandbox.Provider, sandboxID 
 		}
 		var entry struct {
 			Type   string  `json:"type"`
+			Name   string  `json:"name"`
 			Value  float64 `json:"value"`
+			Weight float64 `json:"weight"`
 			Source string  `json:"source"`
 		}
 		if err := json.Unmarshal([]byte(line), &entry); err != nil {
 			continue
 		}
-		rewards = append(rewards, entry.Value)
+		name := entry.Name
+		if name == "" {
+			name = entry.Type
+		}
+		if name == "" {
+			name = "agent_reward"
+		}
+		rewards = append(rewards, Reward{
+			Name:   name,
+			Value:  entry.Value,
+			Weight: entry.Weight,
+			Source: entry.Source,
+		})
 	}
 	return rewards, scanner.Err()
 }

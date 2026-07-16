@@ -6,62 +6,42 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"syscall"
 
-	arena_pb "github.com/albert-lv/OpenAgora/go/proto/openagora/v1"
 	"github.com/albert-lv/OpenAgora/go/pkg/sandbox"
-	"github.com/albert-lv/OpenAgora/go/pkg/sandbox/docker"
-	"github.com/albert-lv/OpenAgora/go/pkg/sandbox/local"
+	_ "github.com/albert-lv/OpenAgora/go/pkg/sandbox/daytona"
+	_ "github.com/albert-lv/OpenAgora/go/pkg/sandbox/docker"
+	_ "github.com/albert-lv/OpenAgora/go/pkg/sandbox/e2b"
+	_ "github.com/albert-lv/OpenAgora/go/pkg/sandbox/local"
+	_ "github.com/albert-lv/OpenAgora/go/pkg/sandbox/mock"
+	_ "github.com/albert-lv/OpenAgora/go/pkg/sandbox/modal"
+	_ "github.com/albert-lv/OpenAgora/go/pkg/sandbox/rock"
 	"github.com/albert-lv/OpenAgora/go/pkg/server"
+	"github.com/albert-lv/OpenAgora/go/pkg/verify"
+	arena_pb "github.com/albert-lv/OpenAgora/go/proto/openagora/v1"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
 
-// dockerVerifyRunner runs verification commands via docker exec.
-type dockerVerifyRunner struct {
+// verifyResolverRunner uses the verify package registry to select and run
+// the appropriate verifier (legacy single-command, pytest, unittest, SWE-bench).
+type verifyResolverRunner struct {
 	logger *zap.Logger
 }
 
-func (r *dockerVerifyRunner) Run(ctx context.Context, sandboxID string, command string) ([]float64, error) {
-	cmd := exec.CommandContext(ctx, "docker", append([]string{"exec", sandboxID, "sh", "-c", command}, []string{}...)...)
-	out, err := cmd.CombinedOutput()
+func (r *verifyResolverRunner) Run(ctx context.Context, provider sandbox.Provider, spec *verify.VerificationSpec, sandboxID string) (*verify.VerificationReport, error) {
 	if r.logger != nil {
-		r.logger.Info("verify exec",
+		r.logger.Info("verify run",
 			zap.String("sandbox_id", sandboxID),
-			zap.String("command", command),
-			zap.String("output", string(out)),
-			zap.Error(err))
+			zap.String("command", spec.Command),
+			zap.String("framework", spec.Framework))
 	}
+	verifier, err := verify.Resolve(spec)
 	if err != nil {
-		return []float64{0.0}, nil
+		return nil, err
 	}
-	return []float64{1.0}, nil
-}
-
-// localVerifyRunner runs verification commands directly in the sandbox directory.
-type localVerifyRunner struct {
-	logger *zap.Logger
-}
-
-func (r *localVerifyRunner) Run(ctx context.Context, sandboxID string, command string) ([]float64, error) {
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
-	cmd.Dir = sandboxID
-	cmd.Env = os.Environ()
-	cmd.Env = append(cmd.Env, "SANDBOX_DIR="+sandboxID, "ARENA_SANDBOX_DIR="+sandboxID)
-	out, err := cmd.CombinedOutput()
-	if r.logger != nil {
-		r.logger.Info("verify exec",
-			zap.String("sandbox_id", sandboxID),
-			zap.String("command", command),
-			zap.String("output", string(out)),
-			zap.Error(err))
-	}
-	if err != nil {
-		return []float64{0.0}, nil
-	}
-	return []float64{1.0}, nil
+	return verifier.Run(ctx, provider, spec, sandboxID)
 }
 
 func main() {
@@ -69,24 +49,19 @@ func main() {
 	defer func() { _ = logger.Sync() }()
 
 	var (
-		sandboxMode = flag.String("sandbox", "docker", "Sandbox provider: docker or local")
+		sandboxMode = flag.String("sandbox", "docker", "Sandbox provider: docker, local, mock, e2b, modal, daytona, or rock")
 		grpcAddr    = flag.String("grpc", ":9090", "gRPC listen address")
 		httpAddr    = flag.String("http", ":9091", "HTTP dashboard listen address")
 	)
 	flag.Parse()
 
-	var sbProvider sandbox.Provider
-	var verifyRunner server.VerifyRunner
-	switch *sandboxMode {
-	case "local":
-		sbProvider = local.NewProvider()
-		verifyRunner = &localVerifyRunner{logger: logger}
-		logger.Info("using local sandbox provider")
-	default:
-		sbProvider = docker.NewProvider()
-		verifyRunner = &dockerVerifyRunner{logger: logger}
-		logger.Info("using docker sandbox provider")
+	factory := sandbox.DefaultProviderFactory()
+	sbProvider, err := factory.Create(*sandboxMode, nil)
+	if err != nil {
+		logger.Fatal("unknown sandbox provider", zap.String("provider", *sandboxMode), zap.Error(err))
 	}
+
+	verifyRunner := &verifyResolverRunner{logger: logger}
 
 	advertiseHost := os.Getenv("ARENA_PROXY_ADVERTISE_HOST")
 	if advertiseHost == "" {

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Generate a veRL-compatible parquet dataset from the Code Colosseum problem bank."""
 
-import json
 import os
 import sys
 from pathlib import Path
@@ -36,21 +35,18 @@ def main():
         records.append(
             {
                 "index": problem.id,
-                "raw_prompt": json.dumps(
-                    [
-                        {
-                            "role": "system",
-                            "content": "You are an expert competitive programmer.",
-                        },
-                        {"role": "user", "content": prompt},
-                    ]
-                ),
-                "extra_info": json.dumps(
+                "raw_prompt": [
                     {
-                        "openagora_verify": problem.build_verify_command(),
-                        "task_file": problem.build_task_file().decode("utf-8"),
-                    }
-                ),
+                        "role": "system",
+                        "content": "You are an expert competitive programmer.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                # Native struct column: veRL reads extra_info back as a dict.
+                "extra_info": {
+                    "openagora_verify": problem.build_verify_command(),
+                    "task_file": problem.build_task_file().decode("utf-8"),
+                },
             }
         )
 

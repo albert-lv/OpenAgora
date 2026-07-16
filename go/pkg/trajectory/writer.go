@@ -14,6 +14,6 @@ type Writer interface {
 type NopWriter struct{}
 
 func (NopWriter) Write(ctx context.Context, step *Step) error { return nil }
-func (NopWriter) Close(ctx context.Context) error              { return nil }
+func (NopWriter) Close(ctx context.Context) error             { return nil }
 
 // TODO: implement local JSONL writer, Parquet writer, remote backend writer

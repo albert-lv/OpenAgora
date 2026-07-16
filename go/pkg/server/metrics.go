@@ -117,6 +117,7 @@ func (m *Metrics) Add(name string, delta float64, labelValues ...string) {
 }
 
 // Handler returns an http.Handler that exposes metrics in Prometheus text format.
+//
 //nolint:errcheck
 func (m *Metrics) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -179,12 +180,12 @@ type gauge struct {
 }
 
 type histogram struct {
-	name     string
-	help     string
-	labels   []string
-	buckets  []float64
-	counts   map[string]uint64
-	sums     map[string]float64
+	name         string
+	help         string
+	labels       []string
+	buckets      []float64
+	counts       map[string]uint64
+	sums         map[string]float64
 	bucketCounts map[string][]uint64 // one count per bucket per label key
 }
 

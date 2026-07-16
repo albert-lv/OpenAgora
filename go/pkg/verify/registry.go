@@ -43,6 +43,11 @@ func Resolve(spec *VerificationSpec) (Verifier, error) {
 		return nil, fmt.Errorf("verification spec is nil")
 	}
 
+	// Multi-reward path: run multiple independent verifiers and aggregate.
+	if len(spec.Rewards) > 1 {
+		return &multiRewardVerifier{}, nil
+	}
+
 	// If a structured SWE-bench spec is provided, use the SWE-bench verifier.
 	if spec.BaselineCommand != "" && spec.PatchCommand != "" {
 		if v, ok := Default(); ok {

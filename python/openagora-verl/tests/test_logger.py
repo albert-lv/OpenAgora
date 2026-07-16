@@ -5,6 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+import pytest
 
 from openagora_verl.logger import (
     CompositeLogger,
@@ -45,6 +46,13 @@ def test_console_logger_does_not_raise(caplog):
 
 
 def test_tensorboard_logger_requires_optional_dependency(tmp_path):
+    # The SummaryWriter backend is an optional dependency chain
+    # (torch.utils.tensorboard, falling back to tensorboardX); skip when
+    # neither is installed.
+    try:
+        from torch.utils.tensorboard import SummaryWriter  # noqa: F401
+    except ImportError:
+        pytest.importorskip("tensorboardX")
     logger = TensorBoardLogger(log_dir=str(tmp_path))
     # Writing should work if tensorboard/torch is installed.
     logger.log_rollout(

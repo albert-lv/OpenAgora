@@ -1,0 +1,18 @@
+schema_version = "1.0"
+
+[task]
+name = "multi-reward-hello"
+description = "Demonstrate multi-dimensional rewards: correctness + style."
+
+[environment]
+image = "openagora-agent-minimal:latest"
+memory = "1g"
+cpus = 1.0
+timeout_seconds = 300
+
+[agent]
+name = "arena-minimal"
+
+[verifier]
+command = "true"
+framework = "script"

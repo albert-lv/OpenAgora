@@ -17,6 +17,12 @@ type Provider struct {
 	waitDuration time.Duration
 }
 
+func init() {
+	sandbox.RegisterProvider("mock", func(_ map[string]string) (sandbox.Provider, error) {
+		return NewProvider(), nil
+	})
+}
+
 // NewProvider creates a new mock provider.
 // It reads ARENA_MOCK_WAIT_MS from the environment (default 3000ms).
 func NewProvider() *Provider {
@@ -27,6 +33,20 @@ func NewProvider() *Provider {
 		}
 	}
 	return &Provider{waitDuration: time.Duration(ms) * time.Millisecond}
+}
+
+// Capabilities returns the mock provider capability set.
+func (p *Provider) Capabilities() sandbox.CapabilitySet {
+	return sandbox.CapabilitySet{
+		FileTransfer:         false,
+		GPUs:                 false,
+		DisableInternet:      false,
+		NetworkAllowlist:     false,
+		DynamicNetworkPolicy: false,
+		Windows:              false,
+		Mounted:              false,
+		DockerCompose:        false,
+	}
 }
 
 // Create returns a fake sandbox immediately.

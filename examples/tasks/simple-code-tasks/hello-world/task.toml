@@ -1,0 +1,15 @@
+schema_version = "1.0"
+
+[task]
+name = "hello-world"
+description = "Write a function that returns 'hello, world!'."
+
+[environment]
+image = "openagora-agent-minimal:latest"
+memory = "1g"
+cpus = 1.0
+timeout_seconds = 300
+
+[verifier]
+command = "python -c \"import solution; assert solution.hello() == 'hello, world!'\""
+timeout_seconds = 60

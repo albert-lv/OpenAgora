@@ -1,0 +1,20 @@
+{
+  "datasets": [
+    {
+      "name": "simple-code-tasks",
+      "version": "0.1.0",
+      "description": "Small deterministic coding tasks for quick validation.",
+      "task_ids": ["hello-world", "sum-two-numbers", "reverse-string"],
+      "task_dir": "examples/tasks/simple-code-tasks",
+      "tags": ["code", "quickstart"]
+    },
+    {
+      "name": "hello-world",
+      "version": "0.1.0",
+      "description": "Single task: hello-world.",
+      "task_ids": ["hello-world"],
+      "task_dir": "examples/tasks/hello-world",
+      "tags": ["code", "quickstart"]
+    }
+  ]
+}

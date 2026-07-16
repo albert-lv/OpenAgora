@@ -30,8 +30,8 @@ Arena provides all four as composable, language-agnostic planes.
 | Plane | Purpose | Status |
 |-------|---------|--------|
 | **Rollout Control Plane** | LLM proxy with sampling injection and trajectory capture | ✅ Available |
-| **Sandbox Plane** | Containerized agent execution (Docker v1) | ✅ Available |
-| **Verification Plane** | Structured SWE-bench verification + multi-language parsers | ✅ Available |
+| **Sandbox Plane** | Pluggable sandbox providers (Docker, local, mock, E2B, Modal, Daytona, ROCK) | ✅ Extensible |
+| **Verification Plane** | Multi-reward verification + SWE-bench + multi-language parsers | ✅ Available |
 | **Trajectory Data Plane** | Structured, append-only trajectory storage | ✅ Available |
 
 See [docs/architecture.md](docs/architecture.md) for the full design.
@@ -82,6 +82,14 @@ cd examples/quickstart
 ```
 
 You should see a rollout complete with captured trajectory steps and a reward.
+
+For a Harbor-style one-liner, build and use the new `arena` CLI:
+
+```bash
+make build-cli
+./bin/arena dataset list
+./bin/arena run --env mock --task examples/tasks/hello-world --llm-backend http://localhost:8000/v1
+```
 
 For more details, check out [examples/quickstart/README.md](examples/quickstart/README.md) and [docs/getting-started.md](docs/getting-started.md).
 

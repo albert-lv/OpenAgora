@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "openagora-cli"
+version = "0.1.0"
+description = "Arena CLI — run agent evaluations and benchmarks like Harbor"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+dependencies = [
+    "openagora-sdk",
+    "typer>=0.12.0",
+    "pydantic>=2.0.0",
+    "toml>=0.10.2",
+    "rich>=13.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+langsmith = [
+    "langsmith>=0.1.0",
+]
+wandb = [
+    "wandb>=0.17.0",
+]
+harbor = [
+    "harbor>=0.18.0; python_version>='3.12'",
+]
+
+[project.scripts]
+arena = "openagora_cli.main:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/openagora_cli"]
+
+[tool.uv.sources]
+openagora-sdk = { path = "../openagora-sdk" }

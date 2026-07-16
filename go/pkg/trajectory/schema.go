@@ -17,11 +17,11 @@ type Step struct {
 
 // LLMRequest captures the agent's LLM request.
 type LLMRequest struct {
-	Endpoint  string
-	Model     string
-	Messages  []byte // raw JSON
-	Tools     []byte // raw JSON
-	Sampling  *SamplingConfig
+	Endpoint string
+	Model    string
+	Messages []byte // raw JSON
+	Tools    []byte // raw JSON
+	Sampling *SamplingConfig
 }
 
 // LLMResponse captures the LLM's response.
@@ -47,8 +47,8 @@ type Reward struct {
 
 // SamplingConfig captures per-rollout sampling parameters.
 type SamplingConfig struct {
-	Temperature      float64
-	TopP             float64
-	Seed             int64
-	MaxTokensBudget  int
+	Temperature     float64
+	TopP            float64
+	Seed            int64
+	MaxTokensBudget int
 }

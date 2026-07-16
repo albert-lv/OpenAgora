@@ -10,7 +10,7 @@ description, and validation plan.
 ## PR Title
 
 ```
-[agent, rollout, doc] feat: add OpenAgora sandbox agent loop integration
+[rollout, doc] feat: add OpenAgora sandbox agent loop integration
 ```
 
 ## PR Description
@@ -101,8 +101,9 @@ python examples/arena_grpo/train_grpo_arena.py \
   single node with 2× RTX 4090 (24 GB). Peak reward reached **96.9%**, no
   crashes or OOM. See `docs/veRL-GPU-validation-plan-2x4090.md` for the full
   reproduction guide, software versions, and training curves.
-- [x] **Unit tests**: `pytest python/openagora-verl/tests/test_agent_loop.py`
-  passes (17 passed) after removing deprecated `ArenaRolloutProvider` tests.
+- [x] **Unit tests**: `pytest python/openagora-verl/tests/` passes
+  (31 passed, 5 skipped — the skipped tests require a local `torch`
+  installation).
 
 ### Checklist
 
@@ -152,12 +153,25 @@ The integration depends on the **`openagora-sdk`** package for the gRPC client.
   adapter. It is not required for the initial PR and can be proposed later once
   the AgentLoop integration stabilizes.
 
-## veRL-side Compatibility Patches
+## veRL Compatibility — No Upstream Changes Required
 
-OpenAgora does **not** require upstream veRL to change. For deployments where
-TransferQueue is available, `openagora_verl` provides a clean adapter
-(`openagora_verl.transfer_queue`) that converts TransferQueue's padded tensors
-into the nested/padded contract veRL expects. Enable it explicitly with:
+OpenAgora does **not** require any modification to veRL, and no adaptation or
+bug-fix PRs to veRL are planned: every compatibility issue found during GPU
+validation is resolved on the OpenAgora side.
+
+| Issue (veRL file) | OpenAgora-side resolution |
+|---|---|
+| TransferQueue returns padded tensors while the FSDP engine / v1 trainer expects nested tensors (`workers/engine/fsdp/transformer_impl.py`, `workers/engine_workers.py`) | `openagora_verl.install_transfer_queue_backend()` converts TransferQueue's padded layout into veRL's nested/padded contract inside the OpenAgora adapter (`openagora_verl.transfer_queue`); validated end-to-end on 2×RTX 4090 |
+| `extra_info` arrives as a JSON string from parquet (`utils/dataset/rl_dataset.py`) | OpenAgora dataset generators write `extra_info` as a native struct column, so veRL reads it back as a dict; `ArenaAgentLoop` additionally tolerates legacy JSON strings |
+| `batch.tags` / `min_global_steps` / `max_global_steps` missing (`trainer/ppo/v1/trainer_base.py`) | `ArenaAgentLoop` returns `min_global_steps` / `max_global_steps` via `AgentLoopOutput.extra_fields` |
+| `rollout_log_probs` absent for agent-loop rollouts (`utils/debug/metrics.py`) | `ArenaAgentLoop` returns `response_logprobs`, which the TransferQueue path propagates as `rollout_log_probs` |
+| vLLM 0.9.0 rejects `logprobs_mode` / `compilation_config` / `wait_for_requests_to_drain` (`workers/rollout/vllm_rollout/vllm_async_server.py`) | Deployment concern, not a code issue: the validated stack serves vLLM externally (`vllm serve`, pinned in `docs/veRL-GPU-validation-plan-2x4090.md`); the Arena agent loop does not drive veRL's internal vLLM server |
+| flash_attn / Triton SIGSEGV on RTX 4090 | Environment workaround documented in the validation guide (`TORCH_COMPILE_DISABLE=1`) |
+
+For deployments where TransferQueue is available, `openagora_verl` provides a
+clean adapter (`openagora_verl.transfer_queue`) that converts TransferQueue's
+padded tensors into the nested/padded contract veRL expects. Enable it
+explicitly with:
 
 ```python
 import openagora_verl
@@ -166,38 +180,10 @@ openagora_verl.install_transfer_queue_backend()
 
 or launch via `examples/verl-integration/train_grpo_arena_sync.py`.
 
-```bash
-bash docs/apply_verl_fixes.sh
-```
-
-The script locates the installed `verl` package and patches the following
-compatibility issues:
-
-| # | File | Issue | Nature |
-|---|------|-------|--------|
-| 1 | `verl/workers/rollout/vllm_rollout/vllm_async_server.py` | vLLM 0.9.0 doesn't support `logprobs_mode` / `compilation_config` / `wait_for_requests_to_drain` | vLLM version compat |
-| 2 | `verl/utils/dataset/rl_dataset.py` | `extra_info` is a JSON string in parquet | Defensive parsing |
-| 4 | `verl/workers/engine/fsdp/transformer_impl.py` | `multi_modal_inputs` arrives as `NonTensorData` | TQ interface gap |
-| 5 | `verl/workers/engine/fsdp/transformer_impl.py` | `input_ids` may be padded instead of nested | Missing non-nested path |
-| 6 | `verl/workers/engine/fsdp/transformer_impl.py` | flash_attn Triton kernel SIGSEGV with certain shapes | Vanilla PyTorch fallback |
-| 7 | `verl/workers/engine_workers.py` | `.offsets()` called on non-nested `input_ids` | Missing non-nested path |
-| 8 | `verl/utils/debug/metrics.py` | `rollout_log_probs` absent in agent-loop rollouts | Missing field guard |
-| 9 | `verl/trainer/ppo/v1/trainer_base.py` | `batch.tags` absent without TransferQueue | Missing metadata guard |
-
-### Fix Classification
-
-| Fix | Ownership | Long-term Resolution |
-|-----|-----------|---------------------|
-| 1 (vLLM API) | veRL | Wait for veRL to drop legacy kwargs |
-| 2 (extra_info) | veRL | veRL PR: handle JSON-encoded `extra_info` |
-| 3 (agent_loop robustness) | **OpenAgora** | Already in `agent_loop.py` |
-| 4 (NonTensorData) | veRL | veRL PR: unwrap `NonTensorData` |
-| 5 (prepare_model_inputs) | veRL | veRL PR: add padded tensor branch |
-| 6 (prepare_model_outputs) | veRL | veRL PR: use vanilla logprobs fallback |
-| 7 (train_mini_batch) | veRL | veRL PR: add `is_nested` check |
-| 8 (debug metrics) | veRL → **OpenAgora** | Fixed by providing `rollout_log_probs` when TQ is present |
-| 9 (batch.tags) | veRL → **OpenAgora** | Fixed by providing `min/max_global_steps` when TQ is present |
-| 10 (full veRL compliance) | **OpenAgora** | Already in `agent_loop.py` |
+> The historical `docs/apply_verl_fixes.py` site-packages patcher (used by the
+> pre-TransferQueue legacy path) has been removed; the adapter supersedes it.
+> The legacy `main_ppo` entry point is kept for older veRL versions but is not
+> the validated configuration.
 
 ---
 
@@ -226,8 +212,8 @@ TransferQueue-based replay buffering, and token budgets. See
 | GPU validation | Done | 10 epochs on 2×RTX 4090 with `Qwen/Qwen2.5-0.5B-Instruct`; peak reward 96.9%. |
 | CPU validation | Done | `train_cpu.py` completes with local sandbox and mock LLM; checkpoint saved. |
 | veRL version pin | Done | Validated against `8f5e16179f7b4b479aa95a072848438ad6bcbf64`. |
-| Unit tests | Passing | `pytest python/openagora-verl/tests/test_agent_loop.py` passes (20 passed). |
-| veRL patch script | Ready | `docs/apply_verl_fixes.sh` / `docs/apply_verl_fixes.py` apply the no-TQ defensive patches. |
+| Unit tests | Passing | `pytest python/openagora-verl/tests/` passes (31 passed, 5 skipped without local torch). |
+| veRL compatibility | Ready | No veRL source changes required; the TransferQueue adapter and struct-column datasets supersede the retired `apply_verl_fixes` patcher. |
 | Documentation | Ready | `docs/veRL-GPU-validation-plan-2x4090.md` has full reproduction guide and metrics. |
 
 ### ⚠️ Gaps to close before opening the PR

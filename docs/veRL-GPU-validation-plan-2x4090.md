@@ -308,22 +308,26 @@ If `solution.py` is empty, the vLLM backend did not return a response; check the
 
 ---
 
-## 12. Suggested PR scope for veRL
+## 12. veRL compatibility and upstream scope
 
-### 12.1 Current state
+### 12.1 No veRL source modifications required
 
 - **OpenAgora-side change**: `python/openagora-verl/src/openagora_verl/transfer_queue/`
   provides a clean adapter for TransferQueue; call
   `openagora_verl.install_transfer_queue_backend()` before starting the sync trainer.
-- **veRL source logic unchanged**: only two dead-code blocks remain in `transformer_impl.py` (padded paths that are never reached). They can be removed safely but do not affect correctness.
+- **veRL source unchanged**: with the adapter installed, the validated run needs
+  no patches to the installed veRL package. The historical
+  `docs/apply_verl_fixes.py` site-packages patcher (pre-adapter, legacy path)
+  has been removed; the remaining compatibility items are owned by OpenAgora —
+  struct-column `extra_info` in the dataset generators and
+  `min/max_global_steps` via `AgentLoopOutput.extra_fields`. See
+  `docs/veRL-PR.md` → "veRL Compatibility" for the full mapping.
 
-### 12.2 Recommended PR contributions
+### 12.2 Upstream scope
 
-1. **Documentation**: clarify the nested/padded contract expected by `no_padding_2_padding` in the TransferQueue interface docs.
-2. **Better diagnostics**: replace bare `assert` statements at the entry of `no_padding_2_padding` with user-friendly error messages.
-3. **Dead-code cleanup**: remove the unreachable padded branches in `transformer_impl.py`.
-
-It is not recommended to add padded-tensor support inside veRL, because that would increase maintenance overhead and conflict with veRL's flash_attn_varlen architecture.
+The only planned upstream contribution is the agent-loop integration PR itself
+(`docs/veRL-PR.md`). All adaptation concerns stay on the OpenAgora side; no
+companion bug-fix PRs to veRL are planned.
 
 ---
 

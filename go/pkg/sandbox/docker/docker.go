@@ -18,9 +18,29 @@ import (
 // as long as the docker binary is on $PATH.
 type Provider struct{}
 
+func init() {
+	sandbox.RegisterProvider("docker", func(_ map[string]string) (sandbox.Provider, error) {
+		return NewProvider(), nil
+	})
+}
+
 // NewProvider creates a new Docker sandbox provider.
 func NewProvider() *Provider {
 	return &Provider{}
+}
+
+// Capabilities returns the Docker provider capability set.
+func (p *Provider) Capabilities() sandbox.CapabilitySet {
+	return sandbox.CapabilitySet{
+		FileTransfer:         true,
+		GPUs:                 true,
+		DisableInternet:      true,
+		NetworkAllowlist:     true,
+		DynamicNetworkPolicy: false,
+		Windows:              true,
+		Mounted:              true,
+		DockerCompose:        true,
+	}
 }
 
 // run executes a docker command and returns (stdout, stderr, error).
@@ -95,6 +115,9 @@ func (p *Provider) Create(ctx context.Context, config *sandbox.Config) (*sandbox
 	}
 
 	args = append(args, config.Image)
+	if len(config.Command) > 0 {
+		args = append(args, config.Command...)
+	}
 
 	stdout, stderr, err := p.run(ctx, args...)
 	if err != nil {

@@ -25,11 +25,31 @@ type Provider struct {
 	procs    map[string]*exec.Cmd
 }
 
+func init() {
+	sandbox.RegisterProvider("local", func(_ map[string]string) (sandbox.Provider, error) {
+		return NewProvider(), nil
+	})
+}
+
 // NewProvider creates a new local sandbox provider.
 func NewProvider() *Provider {
 	return &Provider{
 		hostDirs: make(map[string]*sandbox.Sandbox),
 		procs:    make(map[string]*exec.Cmd),
+	}
+}
+
+// Capabilities returns the local provider capability set.
+func (p *Provider) Capabilities() sandbox.CapabilitySet {
+	return sandbox.CapabilitySet{
+		FileTransfer:         true,
+		GPUs:                 false,
+		DisableInternet:      false,
+		NetworkAllowlist:     false,
+		DynamicNetworkPolicy: false,
+		Windows:              false,
+		Mounted:              true,
+		DockerCompose:        false,
 	}
 }
 
@@ -71,18 +91,18 @@ func (p *Provider) Start(ctx context.Context, id string) error {
 		return err
 	}
 
-	// Interpret Image as the command to run. If it looks like a file path,
-	// execute it directly; otherwise run it through sh -c.
-	image := sb.Config.Image
-	if image == "" {
-		return fmt.Errorf("local sandbox requires a command in the image field")
+	// Interpret Image as the command to run. If an explicit command is provided
+	// in the config, use it instead (agent adapter override).
+	if sb.Config.Image == "" && len(sb.Config.Command) == 0 {
+		return fmt.Errorf("local sandbox requires a command in the image field or sandbox config command")
 	}
-
 	var cmd *exec.Cmd
-	if strings.Contains(image, " ") {
-		cmd = exec.CommandContext(context.Background(), "sh", "-c", image)
+	if len(sb.Config.Command) > 0 {
+		cmd = exec.CommandContext(context.Background(), sb.Config.Command[0], sb.Config.Command[1:]...)
+	} else if strings.Contains(sb.Config.Image, " ") {
+		cmd = exec.CommandContext(context.Background(), "sh", "-c", sb.Config.Image)
 	} else {
-		cmd = exec.CommandContext(context.Background(), image)
+		cmd = exec.CommandContext(context.Background(), sb.Config.Image)
 	}
 	cmd.Dir = id
 	cmd.Env = os.Environ()

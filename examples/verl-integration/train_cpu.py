@@ -47,6 +47,7 @@ for _arena_path in ("/opt/openagora-verl/src", "/opt/openagora-sdk/src"):
 
 from openagora_sdk.client import ArenaClient  # noqa: E402
 from openagora_verl.agent_loop import ArenaAgentLoop  # noqa: E402
+from openagora_verl.logger import NoOpLogger  # noqa: E402
 
 # Mock veRL types if not available (standalone run)
 try:
@@ -109,9 +110,7 @@ def load_dataset(path: str):
                     {"role": "system", "content": "You are a helpful coding assistant."},
                     {"role": "user", "content": "Write a Python function `add(a, b)` that returns the sum of two integers."},
                 ],
-                "extra_info": json.dumps(
-                    {"openagora_verify": ARENA_VERIFY_COMMAND}
-                ),
+                "extra_info": {"openagora_verify": ARENA_VERIFY_COMMAND},
             }
             for i in range(4)
         ]
@@ -177,6 +176,7 @@ class SimpleArenaAgentLoop(ArenaAgentLoop):
         self._verify_command = ARENA_VERIFY_COMMAND
         self._timeout_seconds = 300
         self._arena = ArenaClient(ARENA_ENDPOINT)
+        self._logger = NoOpLogger()
 
 
 async def run_rollouts(agent_loop: SimpleArenaAgentLoop, dataset: list[dict]):

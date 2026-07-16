@@ -16,10 +16,25 @@ def _verification_report_to_dict(report) -> Optional[dict]:
         return None
     # In proto3 an unset message field returns a default instance. Treat it as
     # missing when there is no meaningful content.
-    if not report.stdout and not report.stderr and not list(report.test_cases):
+    if (
+        not report.stdout
+        and not report.stderr
+        and not list(report.test_cases)
+        and not list(report.rewards)
+    ):
         return None
     return {
         "reward": report.reward,
+        "total_reward": report.total_reward,
+        "rewards": [
+            {
+                "name": rw.name,
+                "value": rw.value,
+                "weight": rw.weight,
+                "source": rw.source,
+            }
+            for rw in report.rewards
+        ],
         "f2p_count": report.f2p_count,
         "p2p_count": report.p2p_count,
         "f2f_count": report.f2f_count,
@@ -77,7 +92,8 @@ class ArenaClient:
         timeout_seconds: int = 3600,
         env_vars: Optional[dict] = None,
         task_file: Optional[bytes] = None,
-    ) -> str:
+        command: Optional[list[str]] = None,
+    ) -> dict:
         """Create a new rollout and return the rollout ID."""
         sandbox_cfg = arena_pb.SandboxConfig(
             image=image,
@@ -88,6 +104,8 @@ class ArenaClient:
         )
         if task_file is not None:
             sandbox_cfg.task_file = task_file
+        if command:
+            sandbox_cfg.command.extend(command)
 
         sampling_cfg = None
         if sampling is not None:
@@ -113,6 +131,16 @@ class ArenaClient:
                 patch_command=verify.get("patch_command", ""),
                 working_directory=verify.get("working_directory", ""),
             )
+            for rw in verify.get("rewards", []):
+                verify_cfg.rewards.append(
+                    arena_pb.RewardSpec(
+                        name=rw.get("name", ""),
+                        weight=rw.get("weight", 1.0),
+                        verifier_dir=rw.get("verifier_dir", ""),
+                        command=rw.get("command", ""),
+                        aggregation=rw.get("aggregation", "mean"),
+                    )
+                )
 
         req = arena_pb.CreateRolloutRequest(
             task_id=task_id,

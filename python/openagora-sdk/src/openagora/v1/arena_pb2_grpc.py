@@ -6,7 +6,7 @@ import warnings
 from openagora.v1 import arena_pb2 as openagora_dot_v1_dot_arena__pb2
 from openagora.v1 import trajectory_pb2 as openagora_dot_v1_dot_trajectory__pb2
 
-GRPC_GENERATED_VERSION = '1.81.0'
+GRPC_GENERATED_VERSION = '1.81.1'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 

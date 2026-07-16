@@ -25,7 +25,7 @@ type RolloutState struct {
 	Token       string
 	Sampling    *trajectory.SamplingConfig
 	Usage       trajectory.Usage
-	BudgetLimit int    // 0 = unlimited
+	BudgetLimit int      // 0 = unlimited
 	BackendURL  *url.URL // per-rollout backend override; nil uses proxy default
 }
 

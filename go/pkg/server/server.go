@@ -16,7 +16,7 @@ import (
 	"github.com/albert-lv/OpenAgora/go/pkg/sandbox"
 	"github.com/albert-lv/OpenAgora/go/pkg/trajectory"
 	"github.com/albert-lv/OpenAgora/go/pkg/trajectory/backend"
-
+	"github.com/albert-lv/OpenAgora/go/pkg/verify"
 	arena_pb "github.com/albert-lv/OpenAgora/go/proto/openagora/v1"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -25,17 +25,18 @@ import (
 
 // Rollout holds the runtime state of a single rollout.
 type Rollout struct {
-	ID         string
-	TraceID    string
-	TaskID     string
-	Status     string // pending, running, success, failed, stopped
-	SandboxID  string
-	Token      string
-	ProxyAddr  string
-	Reward     float64
-	Timeout    time.Duration // max time the sandbox may run
-	CreatedAt  time.Time
-	FinishedAt *time.Time
+	ID                 string
+	TraceID            string
+	TaskID             string
+	Status             string // pending, running, success, failed, stopped
+	SandboxID          string
+	Token              string
+	ProxyAddr          string
+	Reward             float64
+	VerificationReport *verify.VerificationReport
+	Timeout            time.Duration // max time the sandbox may run
+	CreatedAt          time.Time
+	FinishedAt         *time.Time
 }
 
 // ArenaServer implements the ArenaService gRPC server.
@@ -57,20 +58,21 @@ type ArenaServer struct {
 }
 
 // VerifyRunner defines the interface for verification.
+// If nil, the server uses verify.Resolve directly.
 type VerifyRunner interface {
-	Run(ctx context.Context, sandboxID string, command string) ([]float64, error)
+	Run(ctx context.Context, provider sandbox.Provider, spec *verify.VerificationSpec, sandboxID string) (*verify.VerificationReport, error)
 }
 
 // ServerConfig holds optional configuration for ArenaServer.
 type ServerConfig struct {
-	SandboxProvider sandbox.Provider
-	Proxy           *proxy.Proxy
+	SandboxProvider    sandbox.Provider
+	Proxy              *proxy.Proxy
 	ProxyAdvertiseHost string // optional host advertised to sandboxes instead of the proxy listener address (e.g. "host.docker.internal")
-	VerifyRunner    VerifyRunner
-	TrajBackend     backend.Backend
-	TrajWriter      trajectory.Writer
-	TrajDir         string
-	Metrics         *Metrics
+	VerifyRunner       VerifyRunner
+	TrajBackend        backend.Backend
+	TrajWriter         trajectory.Writer
+	TrajDir            string
+	Metrics            *Metrics
 }
 
 // New creates a new ArenaServer instance.
@@ -201,6 +203,7 @@ func (s *ArenaServer) CreateRollout(ctx context.Context, req *arena_pb.CreateRol
 		EnvVars:  envVars,
 		TaskFile: req.Sandbox.TaskFile,
 		Timeout:  time.Duration(req.Sandbox.TimeoutSeconds) * time.Second,
+		Command:  req.Sandbox.Command,
 	}
 
 	// 4. Create sandbox.
@@ -272,18 +275,23 @@ func (s *ArenaServer) runLifecycle(rollout *Rollout, sb *sandbox.Sandbox, token 
 	}
 
 	// Run verification BEFORE stopping the sandbox so docker exec can still work.
-	var reward float64
-	if verifyCfg != nil && verifyCfg.Command != "" && s.verifyRunner != nil {
+	var report *verify.VerificationReport
+	if verifyCfg != nil && s.verifyRunner != nil {
 		verifyStart := time.Now()
-		rewards, verr := s.verifyRunner.Run(ctx, sb.ID, verifyCfg.Command)
+		spec := verify.FromProto(verifyCfg)
+		var verr error
+		report, verr = s.verifyRunner.Run(ctx, s.sandboxProvider, spec, sb.ID)
 		verifyResult := "success"
 		if verr != nil {
 			verifyResult = "error"
 			s.logger.Warn("verification failed",
 				zap.String("rollout_id", rollout.ID),
 				zap.Error(verr))
-		} else if len(rewards) > 0 {
-			reward = rewards[0]
+		}
+		if report != nil {
+			if report.TotalReward == 0 && len(report.Rewards) > 0 {
+				report.TotalReward = verify.TotalReward(report.Rewards)
+			}
 		}
 		s.metrics.Observe("arena_verify_duration_seconds", since(verifyStart))
 		s.metrics.Inc("arena_verify_total", 1, verifyResult)
@@ -298,7 +306,10 @@ func (s *ArenaServer) runLifecycle(rollout *Rollout, sb *sandbox.Sandbox, token 
 	s.mu.Lock()
 	if r, ok := s.rollouts[rollout.ID]; ok {
 		r.FinishedAt = &now
-		r.Reward = reward
+		r.VerificationReport = report
+		if report != nil {
+			r.Reward = report.TotalReward
+		}
 		switch {
 		case timedOut:
 			r.Status = "failed"
@@ -311,6 +322,10 @@ func (s *ArenaServer) runLifecycle(rollout *Rollout, sb *sandbox.Sandbox, token 
 	s.mu.Unlock()
 
 	status := s.rollouts[rollout.ID].Status
+	reward := 0.0
+	if report != nil {
+		reward = report.TotalReward
+	}
 	s.metrics.Inc("arena_rollouts_total", 1, status)
 	s.metrics.Observe("arena_rollout_reward", reward)
 
@@ -318,10 +333,15 @@ func (s *ArenaServer) runLifecycle(rollout *Rollout, sb *sandbox.Sandbox, token 
 	s.proxy.UnregisterRollout(token)
 	_ = ps.Close()
 
+	rewardDims := 0
+	if report != nil {
+		rewardDims = len(report.Rewards)
+	}
 	s.logger.Info("rollout finished",
 		zap.String("rollout_id", rollout.ID),
 		zap.String("status", status),
-		zap.Float64("reward", reward))
+		zap.Float64("reward", reward),
+		zap.Int("reward_dimensions", rewardDims))
 }
 
 // GetRollout returns the status of a rollout.
@@ -420,11 +440,12 @@ func (s *ArenaServer) GetTrajectory(ctx context.Context, req *arena_pb.GetTrajec
 // toProtoRollout converts internal Rollout to protobuf Rollout.
 func (s *ArenaServer) toProtoRollout(r *Rollout) *arena_pb.Rollout {
 	pb := &arena_pb.Rollout{
-		RolloutId: r.ID,
-		TaskId:    r.TaskID,
-		Status:    r.Status,
-		CreatedAt: timestamppb.New(r.CreatedAt),
-		Reward:    float32(r.Reward),
+		RolloutId:          r.ID,
+		TaskId:             r.TaskID,
+		Status:             r.Status,
+		CreatedAt:          timestamppb.New(r.CreatedAt),
+		Reward:             float32(r.Reward),
+		VerificationReport: r.VerificationReport.ToProto(),
 	}
 	if r.FinishedAt != nil {
 		pb.FinishedAt = timestamppb.New(*r.FinishedAt)
@@ -458,7 +479,7 @@ func (s *ArenaServer) toProtoStep(step *trajectory.Step, stepID int) *arena_pb.T
 	}
 	if step.Response != nil {
 		pb.Response = &arena_pb.LLMResponse{
-			ChoicesJson: step.Response.Choices,
+			ChoicesJson:  step.Response.Choices,
 			LogprobsJson: step.Response.Logprobs,
 		}
 		if step.Response.Usage != nil {

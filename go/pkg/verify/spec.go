@@ -45,19 +45,29 @@ type TestCaseTransition struct {
 	Category       Category
 }
 
+// RewardSpec describes one dimension of a multi-reward verification.
+type RewardSpec struct {
+	Name        string
+	Weight      float64
+	VerifierDir string
+	Command     string
+	Aggregation string // mean, all_pass, max
+}
+
 // VerificationSpec is the Go-side representation of a verification request.
 type VerificationSpec struct {
-	Command           string
-	LogParser         string
-	PassToPass        []string
-	FailToPass        []string
-	Language          string
-	Framework         string
-	InstallCommand    string
-	BaselineCommand   string
-	PatchCommand      string
-	Timeout           time.Duration
-	WorkingDirectory  string
+	Command          string
+	LogParser        string
+	PassToPass       []string
+	FailToPass       []string
+	Language         string
+	Framework        string
+	InstallCommand   string
+	BaselineCommand  string
+	PatchCommand     string
+	Timeout          time.Duration
+	WorkingDirectory string
+	Rewards          []RewardSpec
 }
 
 // FromProto converts a protobuf VerifyConfig into a VerificationSpec.
@@ -68,6 +78,16 @@ func FromProto(cfg *arena_pb.VerifyConfig) *VerificationSpec {
 	timeout := time.Duration(cfg.TimeoutSeconds) * time.Second
 	if timeout == 0 {
 		timeout = 5 * time.Minute
+	}
+	rewards := make([]RewardSpec, len(cfg.Rewards))
+	for i, r := range cfg.Rewards {
+		rewards[i] = RewardSpec{
+			Name:        r.Name,
+			Weight:      float64(r.Weight),
+			VerifierDir: r.VerifierDir,
+			Command:     r.Command,
+			Aggregation: r.Aggregation,
+		}
 	}
 	return &VerificationSpec{
 		Command:          cfg.Command,
@@ -81,5 +101,6 @@ func FromProto(cfg *arena_pb.VerifyConfig) *VerificationSpec {
 		PatchCommand:     cfg.PatchCommand,
 		Timeout:          timeout,
 		WorkingDirectory: cfg.WorkingDirectory,
+		Rewards:          rewards,
 	}
 }

@@ -17,11 +17,11 @@ func (p JestParser) Parse(stdout, stderr string) ([]TestCase, error) {
 	}
 	var report struct {
 		TestResults []struct {
-			Name      string `json:"name"`
-			Status    string `json:"status"`
+			Name             string `json:"name"`
+			Status           string `json:"status"`
 			AssertionResults []struct {
-				Title    string `json:"title"`
-				Status   string `json:"status"`
+				Title           string   `json:"title"`
+				Status          string   `json:"status"`
 				FailureMessages []string `json:"failureMessages"`
 			} `json:"assertionResults"`
 		} `json:"testResults"`

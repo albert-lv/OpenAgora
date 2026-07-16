@@ -64,11 +64,14 @@ This compiles the Go server and places the binary at `./bin/openagora-server`.
 
 By default the server listens on `:9090`. You should see log output indicating that the gRPC server and sandbox provider are ready.
 
-> **Note:** The quickstart uses the Docker sandbox provider by default. Make sure Docker is running before proceeding. If you do not have Docker, you can start the server with a mock sandbox instead:
+> **Note:** The server uses the Docker sandbox provider by default. Make sure Docker is running before proceeding. If you do not have Docker, you can start the server with a mock or local sandbox instead:
 > ```bash
 > ./bin/openagora-server --sandbox=mock
+> ./bin/openagora-server --sandbox=local
 > ```
 > The mock provider does not create real containers, but the rest of the flow (proxy, trajectory, verification) works normally.
+>
+> New providers (Daytona, Modal, E2B, ROCK, …) can be registered via the `sandbox.ProviderFactory` without changing the server binary.
 
 > **Note on LLM backend:** The default `task.json` in `examples/quickstart` points to a mock LLM server at `http://localhost:8000/v1`. For real inference you can use any OpenAI-compatible endpoint. Arena currently supports three backend options:
 >
@@ -80,7 +83,33 @@ By default the server listens on `:9090`. You should see log output indicating t
 
 ---
 
-## Run the Quickstart
+## Run the Quickstart with the Arena CLI
+
+OpenAgora now ships with a Harbor-style CLI called `arena`. After building it once:
+
+```bash
+make build-cli
+```
+
+you can run benchmarks with a single command:
+
+```bash
+# List built-in datasets
+./bin/arena dataset list
+
+# Run a single task with the mock sandbox
+./bin/openagora-server --sandbox=mock &
+./bin/arena run --env mock --task examples/tasks/hello-world --llm-backend http://localhost:8000/v1
+
+# Run a dataset
+./bin/arena run --env docker --dataset simple-code-tasks -n 3
+```
+
+The CLI reads tasks in the new `task.toml` + `instruction.md` format and converts them to the legacy `task.json` that the server consumes.
+
+---
+
+## Run the Legacy Quickstart
 
 In a second terminal:
 
@@ -214,6 +243,7 @@ cd python/openagora-verl && uv run pytest
 Now that you have Arena running, here are some natural next steps:
 
 - **Read the [Sandbox Contract](sandbox-contract.md)** to learn how to package your own agent.
+- **Read the [Task Format](task-format.md)** to define tasks with `task.toml` + `instruction.md`.
 - **Read [Architecture](architecture.md)** to understand the four planes and how data flows through the system.
 - **Explore [examples/verl-integration/](../examples/verl-integration/)** to see how Arena connects to RL training loops.
 - **Run [examples/code-colosseum/](../examples/code-colosseum/)** for a full-stack agent duel + GRPO demo built on all four planes.

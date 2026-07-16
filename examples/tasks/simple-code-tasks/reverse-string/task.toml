@@ -1,0 +1,15 @@
+schema_version = "1.0"
+
+[task]
+name = "reverse-string"
+description = "Write a function reverse(s) that reverses a string."
+
+[environment]
+image = "openagora-agent-minimal:latest"
+memory = "1g"
+cpus = 1.0
+timeout_seconds = 300
+
+[verifier]
+command = "python -c \"import solution; assert solution.reverse('abc') == 'cba'; assert solution.reverse('hello') == 'olleh'\""
+timeout_seconds = 60
