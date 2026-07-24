@@ -139,12 +139,14 @@ python examples/arena_grpo/train_grpo_arena.py \
 
 The integration depends on the **`openagora-sdk`** package for the gRPC client.
 
-- `openagora-verl` declares `openagora-sdk>=0.1.0` in its runtime dependencies.
+- `openagora-sdk` 0.1.0 is **published on PyPI**
+  (<https://pypi.org/project/openagora-sdk/>); install with
+  `pip install openagora-sdk`.
 - `openagora-sdk` is kept as a separate, versioned package so the protocol
   client can evolve independently of veRL's release cycle.
-- For the upstream PR, the new veRL files (`ArenaAgentLoop` and optionally
-  `ArenaRollout`) will import from `openagora_sdk.client` and add
-  `openagora-sdk` to the veRL optional dependency group.
+- In the upstream branch, `ArenaAgentLoop` imports `openagora_sdk.client`
+  **lazily** with an actionable `ImportError` message, so the package is not
+  added to veRL's `setup.py` / `requirements.txt`.
 
 ## Scope
 
@@ -220,18 +222,20 @@ TransferQueue-based replay buffering, and token budgets. See
 
 | Gap | Severity | Recommended Action |
 |-----|----------|-------------------|
-| **Upstream diff extraction** | Medium | Extract only `ArenaAgentLoop` (+ `openagora-sdk` dependency) into a patch against `volcengine/verl` and validate end-to-end. |
+| ~~Upstream diff extraction~~ | ✅ Done (2026-07-24) | Branch `arena-agent-loop` on `albert-lv/verl` (base: upstream main `d8acd86`): `arena_agent_loop.py` + 10 CPU unit tests + `examples/arena_grpo/` + `docs/advance/agent_loop.rst`; pre-commit all green. Adapted to current main (pydantic `AgentLoopOutput`, fixed constructor signature, `main_ppo_sync` merged into `main_ppo`). |
+| **GPU re-validation on latest main** | Medium | Re-run the GRPO end-to-end on the `arena-agent-loop` branch (the previous validation was against `8f5e161`); attach logs to the PR. |
 | **Logprob/text alignment** | Low | Covered by unit tests; document multi-turn semantics in upstream docs. |
 | **Sync I/O in rollout** | Low | `ArenaRollout.generate_sequences` runs blocking gRPC calls in `ThreadPoolExecutor`. Document throughput implications; an async variant can be added later. |
 
-### 🎯 Estimated distance
+### 🎯 Status (2026-07-24)
 
-From a code-completeness standpoint, the integration is **~95% ready**. The
-remaining work is almost entirely extraction:
+The upstream diff has been extracted and validated on CPU:
 
-- **0.5 day** to write upstream docs and migrate examples to the proposed
-  `examples/arena_grpo/` layout.
-- **1 day** to extract a minimal upstream diff (only `ArenaAgentLoop`) and
-  validate it end-to-end.
+- Branch `arena-agent-loop` on [`albert-lv/verl`](https://github.com/albert-lv/verl),
+  PR description drafted from the upstream template.
+- `openagora-sdk` 0.1.0 published on PyPI.
 
-Once those are done, the PR can be opened.
+Remaining around opening the PR:
+
+- **GPU re-validation** on the branch against latest veRL main.
+- Push the branch and open the (draft) PR; iterate with upstream review.
