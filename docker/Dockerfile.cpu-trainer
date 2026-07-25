@@ -33,10 +33,10 @@ RUN pip install --no-cache-dir \
 RUN git clone --depth 1 https://github.com/volcengine/verl.git /opt/verl
 RUN cd /opt/verl && pip install --no-cache-dir -e .
 
-# Copy openagora-verl into image and install
-COPY python/openagora-sdk /opt/openagora-sdk
+# Install the OpenAgora SDK from PyPI; copy openagora-verl (unpublished)
+# into the image and install it from source
+RUN pip install --no-cache-dir openagora-sdk==0.1.0
 COPY python/openagora-verl /opt/openagora-verl
-RUN cd /opt/openagora-sdk && pip install --no-cache-dir -e .
 RUN cd /opt/openagora-verl && pip install --no-cache-dir -e .
 
 WORKDIR /app

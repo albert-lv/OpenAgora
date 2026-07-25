@@ -69,6 +69,7 @@ python train_cpu.py
 - CUDA 11.8+
 - veRL installed (`pip install verl`)
 - vLLM or SGLang installed
+- OpenAgora SDK + veRL adapter: `pip install openagora-sdk && pip install -e python/openagora-verl`
 
 **Steps**:
 ```bash

@@ -85,8 +85,9 @@ pip install git+https://github.com/volcengine/verl.git@8f5e16179f7b4b479aa95a072
 # 5. Install vLLM
 pip install vllm==0.9.0
 
-# 6. Install OpenAgora adapters (registers ArenaAgentLoop and the TransferQueue adapter)
-pip install -e python/openagora-sdk
+# 6. Install the OpenAgora SDK from PyPI and the adapter from the repo
+#    (the adapter registers ArenaAgentLoop and the TransferQueue backend)
+pip install openagora-sdk
 pip install -e python/openagora-verl
 
 # When using the TransferQueue-based sync trainer, install the adapter explicitly:
