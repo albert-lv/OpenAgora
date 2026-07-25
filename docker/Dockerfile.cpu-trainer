@@ -29,8 +29,13 @@ RUN pip install --no-cache-dir \
     pysocks \
     socksio
 
-# Clone and install veRL (shallow clone)
-RUN git clone --depth 1 https://github.com/volcengine/verl.git /opt/verl
+# Clone and install veRL, pinned to the upstream main commit that the
+# OpenAgora PR branch (arena-agent-loop) is based on
+RUN git init /opt/verl \
+    && cd /opt/verl \
+    && git remote add origin https://github.com/verl-project/verl.git \
+    && git fetch --depth 1 origin d8acd86ecb74680dad8d63ae2a9f376ec9a7fe16 \
+    && git checkout FETCH_HEAD
 RUN cd /opt/verl && pip install --no-cache-dir -e .
 
 # Install the OpenAgora SDK from PyPI; copy openagora-verl (unpublished)
