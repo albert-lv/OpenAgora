@@ -5,6 +5,16 @@ This document is a living draft for the upstream PR to
 OpenAgora repository onto veRL's code base and provides the PR title,
 description, and validation plan.
 
+> **Outcome (2026-07-31):** Submitted as draft PR
+> [verl-project/verl#7153](https://github.com/verl-project/verl/pull/7153) and
+> **closed by the veRL maintainers** — veRL does not accept specific AgentLoop
+> implementations into the codebase ("veRL is designed to be extended by
+> user", see the
+> [extend guide](https://verl.readthedocs.io/en/latest/extend_guide.html)).
+> The integration therefore ships permanently as the external `openagora-verl`
+> adapter package — which is veRL's intended extension model. No further
+> upstream PR is planned; this document is kept as the design record.
+
 ---
 
 ## PR Title
@@ -227,15 +237,13 @@ TransferQueue-based replay buffering, and token budgets. See
 | **Logprob/text alignment** | Low | Covered by unit tests; document multi-turn semantics in upstream docs. |
 | **Sync I/O in rollout** | Low | `ArenaRollout.generate_sequences` runs blocking gRPC calls in `ThreadPoolExecutor`. Document throughput implications; an async variant can be added later. |
 
-### 🎯 Status (2026-07-24)
+### 🎯 Final outcome (2026-07-31)
 
-The upstream diff has been extracted and validated on CPU:
-
-- Branch `arena-agent-loop` on [`albert-lv/verl`](https://github.com/albert-lv/verl),
-  PR description drafted from the upstream template.
-- `openagora-sdk` 0.1.0 published on PyPI.
-
-Remaining around opening the PR:
-
-- **GPU re-validation** on the branch against latest veRL main.
-- Push the branch and open the (draft) PR; iterate with upstream review.
+- Draft PR [verl-project/verl#7153](https://github.com/verl-project/verl/pull/7153)
+  was opened after GPU re-validation on the branch, and **closed by the veRL
+  maintainers** per their extension policy (see the outcome note at the top of
+  this document).
+- The integration ships permanently as the external `openagora-verl` adapter
+  package on a stock veRL installation — no fork, no patches.
+- `openagora-sdk` remains published on PyPI; the `arena-agent-loop` branch on
+  `albert-lv/verl` is kept as a reference port.
