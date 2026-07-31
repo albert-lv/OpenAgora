@@ -15,7 +15,8 @@ set -euo pipefail
 #   2. vLLM or SGLang server running on ARENA_LLM_BACKEND
 #   3. Agent Docker image available on the host
 #   4. Training dataset in Parquet format
-#   5. openagora_verl installed
+#   5. openagora-sdk installed from PyPI (pip install openagora-sdk) and
+#      openagora-verl available (pip install -e python/openagora-verl)
 
 # --- Arena Configuration ---
 export ARENA_ENDPOINT="${ARENA_ENDPOINT:-localhost:9090}"
@@ -35,6 +36,15 @@ echo "Agent image:         $ARENA_AGENT_IMAGE"
 echo "LLM backend:         $ARENA_LLM_BACKEND"
 echo "Verify command:      $ARENA_VERIFY_COMMAND"
 echo "Trainer entry point: $TRAINER_ENTRY_POINT"
+
+# --- Dependency preflight ---
+# The wrapper puts openagora-verl (unpublished) on sys.path, but the OpenAgora
+# SDK must be installed into this Python environment from PyPI.
+if ! python3 -c "import openagora_sdk" 2>/dev/null; then
+  echo "ERROR: openagora-sdk is not installed in this Python environment." >&2
+  echo "       Install it with: pip install openagora-sdk" >&2
+  exit 1
+fi
 
 # --- Training Arguments ---
 # Adjust these to match your dataset, model, and cluster.

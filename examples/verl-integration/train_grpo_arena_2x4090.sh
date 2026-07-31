@@ -18,7 +18,8 @@ set -euo pipefail
 #          --gpu-memory-utilization 0.85 --max-model-len 2048
 #   3. Agent Docker image built: openagora-agent-minimal:latest
 #   4. train.parquet / test.parquet generated in data/
-#   5. openagora_verl installed; the launcher calls train_grpo_arena_sync.py,
+#   5. openagora-sdk installed from PyPI (pip install openagora-sdk) and
+#      openagora_verl available; the launcher calls train_grpo_arena_sync.py,
 #      which explicitly installs the TransferQueue adapter via
 #      openagora_verl.install_transfer_queue_backend()
 #   6. veRL installed with main_ppo_sync trainer (veRL 0.9.0.dev+)
@@ -69,6 +70,15 @@ echo "HF_HUB_OFFLINE=$HF_HUB_OFFLINE"
 echo "TRANSFORMERS_OFFLINE=$TRANSFORMERS_OFFLINE"
 echo "Agent loop config:  $(dirname "$0")/arena_agent_loop.yaml"
 echo "Trainer entry point: $TRAINER_ENTRY_POINT"
+
+# --- Dependency preflight ---
+# The wrapper puts openagora-verl (unpublished) on sys.path, but the OpenAgora
+# SDK must be installed into this Python environment from PyPI.
+if ! python3 -c "import openagora_sdk" 2>/dev/null; then
+  echo "ERROR: openagora-sdk is not installed in this Python environment." >&2
+  echo "       Install it with: pip install openagora-sdk" >&2
+  exit 1
+fi
 
 python3 "$TRAINER_ENTRY_POINT" \
   algorithm.adv_estimator=grpo \
