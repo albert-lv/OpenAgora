@@ -99,7 +99,7 @@ func (r *VerificationReport) ToProto() *arena_pb.VerificationReport {
 		}
 	}
 	return &arena_pb.VerificationReport{
-		Reward:      float32(r.Reward),
+		Reward:      float32(r.Reward), //nolint:staticcheck // SA1019: legacy field kept populated for older clients
 		TotalReward: float32(r.TotalReward),
 		Rewards:     rewards,
 		F2PCount:    int32(r.F2PCount),

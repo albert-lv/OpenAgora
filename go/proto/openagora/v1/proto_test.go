@@ -33,7 +33,7 @@ func TestPartialRolloutAndWeightSyncProtos(t *testing.T) {
 		if err := proto.Unmarshal(data, out); err != nil {
 			t.Fatalf("unmarshal %T: %v", m, err)
 		}
-		if !proto.Equal(m, out.(proto.Message)) {
+		if !proto.Equal(m, out) {
 			t.Fatalf("round-trip mismatch for %T", m)
 		}
 	}

@@ -101,7 +101,7 @@ func TestCreateRollout(t *testing.T) {
 	sp := newMockSandboxProvider()
 	vr := &mockVerifyRunner{report: &verify.VerificationReport{
 		TotalReward: 0.95,
-		Reward:      0.95,
+		Reward:      0.95, //nolint:staticcheck // SA1019: mirrors real runners that still set the legacy field
 		Rewards:     []verify.Reward{{Name: "test", Value: 0.95}},
 	}}
 
