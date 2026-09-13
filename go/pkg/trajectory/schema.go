@@ -29,6 +29,13 @@ type LLMResponse struct {
 	Choices  []byte // raw JSON
 	Usage    *Usage
 	Logprobs []byte // raw JSON
+	// Engine-native token IDs captured from the inference backend when it
+	// returns them (e.g. SGLang meta_info). Empty when the backend does not
+	// expose them; consumers must fall back to re-tokenization.
+	PromptTokenIDs     []int32
+	CompletionTokenIDs []int32
+	// WeightVersion that generated this response, when the backend reports it.
+	WeightVersion string
 }
 
 // Usage tracks token consumption.

@@ -12,6 +12,9 @@ service ArenaService {
   rpc ListRollouts(ListRolloutsRequest) returns (ListRolloutsResponse);
   rpc StreamTrajectory(StreamTrajectoryRequest) returns (stream TrajectoryStep);
   rpc GetTrajectory(GetTrajectoryRequest) returns (Trajectory);
+  rpc PauseRollout(PauseRolloutRequest) returns (PauseRolloutResponse);
+  rpc ResumeRollout(ResumeRolloutRequest) returns (ResumeRolloutResponse);
+  rpc UpdateWeights(UpdateWeightsRequest) returns (UpdateWeightsResponse);
 }
 
 message CreateRolloutRequest {
@@ -38,6 +41,36 @@ message StopRolloutRequest {
 
 message StopRolloutResponse {}
 
+message PauseRolloutRequest {
+  string rollout_id = 1;
+  // "freeze" (default): pause the sandbox preserving all in-container state;
+  // the rollout can later be resumed and its LLM calls will be served by
+  // whatever weights the backend serves at resume time (partial rollout).
+  string mode = 2;
+}
+message PauseRolloutResponse {}
+
+message ResumeRolloutRequest {
+  string rollout_id = 1;
+}
+message ResumeRolloutResponse {
+  string proxy_url = 1;  // proxy address (may differ from the original one)
+  string token = 2;
+}
+
+// UpdateWeights refits the shared LLM inference backend with newly trained
+// weights (trainer-side checkpoint on a shared filesystem).
+message UpdateWeightsRequest {
+  string model_path = 1;      // checkpoint directory containing new weights
+  string weight_version = 2;  // opaque version label, e.g. trainer global step
+  bool abort_in_flight = 3;   // abort running generation requests during refit
+}
+message UpdateWeightsResponse {
+  bool success = 1;
+  string message = 2;
+  string weight_version = 3;  // version now being served
+}
+
 message ListRolloutsRequest {
   int32 page_size = 1;
   string page_token = 2;
@@ -50,11 +83,13 @@ message ListRolloutsResponse {
 message Rollout {
   string rollout_id = 1;
   string task_id = 2;
-  string status = 3;  // "pending", "running", "success", "failed", "stopped"
+  string status = 3;  // "pending", "running", "paused", "success", "failed", "stopped"
   google.protobuf.Timestamp created_at = 4;
   google.protobuf.Timestamp finished_at = 5;
   float reward = 6;
   VerificationReport verification_report = 7;
+  // Weight version the rollout's generation is attributed to.
+  string weight_version = 8;
 }
 
 message StreamTrajectoryRequest {

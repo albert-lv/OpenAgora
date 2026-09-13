@@ -60,6 +60,12 @@ func (p *Provider) Start(ctx context.Context, id string) error { return nil }
 // Stop is a no-op.
 func (p *Provider) Stop(ctx context.Context, id string) error { return nil }
 
+// Pause is a no-op; the mock sandbox has no process state to freeze.
+func (p *Provider) Pause(ctx context.Context, id string) error { return nil }
+
+// Unpause is a no-op.
+func (p *Provider) Unpause(ctx context.Context, id string) error { return nil }
+
 // Destroy is a no-op.
 func (p *Provider) Destroy(ctx context.Context, sb *sandbox.Sandbox) error { return nil }
 

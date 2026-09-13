@@ -100,3 +100,57 @@ def extract_logprobs(
     if len(logprobs) < response_length:
         logprobs.extend([0.0] * (response_length - len(logprobs)))
     return logprobs[:response_length]
+
+
+def extract_native_token_ids(
+    trajectory: list[dict[str, Any]],
+) -> Optional[dict[str, list[int]]]:
+    """Extract engine-native token IDs from trajectory steps if available.
+
+    The Arena proxy populates ``prompt_token_ids``/``completion_token_ids`` on
+    each step's ``LLMResponse`` when the inference backend reports them (e.g.
+    SGLang ``meta_info``). Using them verbatim avoids the train/inference
+    tokenization mismatch of re-tokenizing response text.
+
+    Args:
+        trajectory: List of trajectory step dicts from Arena.
+
+    Returns:
+        ``{"prompt_token_ids": [...], "completion_token_ids": [...]}`` with the
+        per-step IDs concatenated in order, or ``None`` when no step carries
+        completion token IDs (callers should fall back to re-tokenization).
+    """
+    prompt_ids: list[int] = []
+    completion_ids: list[int] = []
+    for step in trajectory:
+        resp = step.get("response") or {}
+        prompt_ids.extend(int(t) for t in resp.get("prompt_token_ids") or [])
+        completion_ids.extend(int(t) for t in resp.get("completion_token_ids") or [])
+    if not completion_ids:
+        return None
+    return {
+        "prompt_token_ids": prompt_ids,
+        "completion_token_ids": completion_ids,
+    }
+
+
+def extract_weight_versions(trajectory: list[dict[str, Any]]) -> list[str]:
+    """Collect the per-step weight versions reported by the inference engine.
+
+    Steps of a partial rollout that was paused and resumed under new weights
+    may report different versions; the returned list preserves trajectory
+    order (one entry per step that reports a version).
+
+    Args:
+        trajectory: List of trajectory step dicts from Arena.
+
+    Returns:
+        List of non-empty ``weight_version`` strings, possibly empty.
+    """
+    versions: list[str] = []
+    for step in trajectory:
+        resp = step.get("response") or {}
+        version = resp.get("weight_version")
+        if version:
+            versions.append(version)
+    return versions

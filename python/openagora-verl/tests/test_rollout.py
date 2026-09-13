@@ -62,7 +62,16 @@ def fake_tokenizer():
 def mock_client():
     client = MagicMock()
     client.create_rollout.return_value = {"rollout_id": "r-123"}
-    client.wait.return_value = {"status": "success", "reward": 1.0}
+    client.wait.return_value = {
+        "status": "success",
+        "reward": 1.0,
+        "weight_version": "v5",
+    }
+    client.update_weights.return_value = {
+        "success": True,
+        "message": "ok",
+        "weight_version": "v5",
+    }
     client.get_trajectory.return_value = [
         {
             "response": {
@@ -87,6 +96,27 @@ class TestArenaRollout:
         )
         assert rollout._arena_endpoint == "localhost:9090"
         assert rollout._agent_image == "test:latest"
+
+    def test_default_response_length_defaults_to_512(self, fake_tokenizer):
+        model_config = MagicMock()
+        model_config.tokenizer = fake_tokenizer
+        rollout = ArenaRollout(
+            config=MagicMock(),
+            model_config=model_config,
+            device_mesh=None,
+        )
+        assert rollout._default_response_length == 512
+
+    def test_default_response_length_configurable(self, fake_tokenizer):
+        model_config = MagicMock()
+        model_config.tokenizer = fake_tokenizer
+        rollout = ArenaRollout(
+            config=MagicMock(),
+            model_config=model_config,
+            device_mesh=None,
+            default_response_length=2048,
+        )
+        assert rollout._default_response_length == 2048
 
     def test_init_no_tokenizer_raises(self):
         class NoTokenizerConfig:
@@ -208,6 +238,8 @@ class TestArenaRollout:
         assert "attention_mask" in output.batch
         assert "position_ids" in output.batch
         assert "old_log_probs" in output.batch
+        assert "arena_weight_version" in output.non_tensor_batch
+        assert list(output.non_tensor_batch["arena_weight_version"]) == ["v5"] * 2
         mock_client.create_rollout.assert_called()
 
     @patch("openagora_sdk.client.ArenaClient")
@@ -273,3 +305,118 @@ class TestArenaRollout:
         assert output.batch["sequences"].shape[0] == 6
         # Should have created 6 rollouts.
         assert mock_client.create_rollout.call_count == 6
+
+
+class TestUpdateWeights:
+    def _make_rollout(self, fake_tokenizer, mock_client, **kwargs):
+        model_config = MagicMock()
+        model_config.tokenizer = fake_tokenizer
+        rollout = ArenaRollout(
+            config=MagicMock(),
+            model_config=model_config,
+            device_mesh=None,
+            **kwargs,
+        )
+        rollout._client = mock_client
+        return rollout
+
+    def test_update_weights_forwards_path_and_version(
+        self, fake_tokenizer, mock_client
+    ):
+        rollout = self._make_rollout(fake_tokenizer, mock_client)
+
+        import asyncio
+
+        resp = asyncio.run(
+            rollout.update_weights(model_path="/ckpt/step-5", weight_version="v5")
+        )
+
+        mock_client.update_weights.assert_called_once_with(
+            model_path="/ckpt/step-5",
+            weight_version="v5",
+            abort_in_flight=False,
+        )
+        assert resp["success"] is True
+        assert resp["weight_version"] == "v5"
+
+    def test_update_weights_uses_constructor_path(self, fake_tokenizer, mock_client):
+        rollout = self._make_rollout(
+            fake_tokenizer, mock_client, weight_sync_model_path="/ckpt/latest"
+        )
+
+        import asyncio
+
+        asyncio.run(rollout.update_weights(weight_version="v9"))
+
+        mock_client.update_weights.assert_called_once_with(
+            model_path="/ckpt/latest",
+            weight_version="v9",
+            abort_in_flight=False,
+        )
+
+    def test_update_weights_auto_increments_version(self, fake_tokenizer, mock_client):
+        rollout = self._make_rollout(
+            fake_tokenizer, mock_client, weight_sync_model_path="/ckpt/latest"
+        )
+
+        import asyncio
+
+        asyncio.run(rollout.update_weights())
+        asyncio.run(rollout.update_weights())
+
+        versions = [
+            c.kwargs["weight_version"]
+            for c in mock_client.update_weights.call_args_list
+        ]
+        assert versions == ["1", "2"]
+
+    def test_update_weights_without_path_is_noop(self, fake_tokenizer, mock_client):
+        rollout = self._make_rollout(fake_tokenizer, mock_client)
+
+        import asyncio
+
+        resp = asyncio.run(rollout.update_weights())
+
+        assert resp is None
+        mock_client.update_weights.assert_not_called()
+
+    def test_update_weights_accepts_weights_dict(self, fake_tokenizer, mock_client):
+        rollout = self._make_rollout(fake_tokenizer, mock_client)
+
+        import asyncio
+
+        asyncio.run(
+            rollout.update_weights({"model_path": "/ckpt/d", "weight_version": "v3"})
+        )
+
+        mock_client.update_weights.assert_called_once_with(
+            model_path="/ckpt/d",
+            weight_version="v3",
+            abort_in_flight=False,
+        )
+
+
+class TestWeightVersionPropagation:
+    def test_run_one_propagates_weight_version(self, fake_tokenizer, mock_client):
+        model_config = MagicMock()
+        model_config.tokenizer = fake_tokenizer
+        rollout = ArenaRollout(
+            config=MagicMock(),
+            model_config=model_config,
+            device_mesh=None,
+        )
+        rollout._client = mock_client
+
+        result = rollout._run_one(0, "1 2", {"temperature": 1.0}, 8)
+
+        assert result["weight_version"] == "v5"
+
+    def test_empty_result_has_empty_weight_version(self, fake_tokenizer):
+        model_config = MagicMock()
+        model_config.tokenizer = fake_tokenizer
+        rollout = ArenaRollout(
+            config=MagicMock(),
+            model_config=model_config,
+            device_mesh=None,
+        )
+        assert rollout._empty_result(4)["weight_version"] == ""

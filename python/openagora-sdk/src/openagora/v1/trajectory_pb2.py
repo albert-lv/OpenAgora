@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1dopenagora/v1/trajectory.proto\x12\x0copenagora.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xcb\x02\n\x0eTrajectoryStep\x12\x12\n\nrollout_id\x18\x01 \x01(\t\x12\x0f\n\x07step_id\x18\x02 \x01(\x05\x12&\n\x02ts\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12)\n\x07request\x18\x04 \x01(\x0b\x32\x18.openagora.v1.LLMRequest\x12+\n\x08response\x18\x05 \x01(\x0b\x32\x19.openagora.v1.LLMResponse\x12%\n\x07rewards\x18\x06 \x03(\x0b\x32\x14.openagora.v1.Reward\x12<\n\x08metadata\x18\x07 \x03(\x0b\x32*.openagora.v1.TrajectoryStep.MetadataEntry\x1a/\n\rMetadataEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"\x88\x01\n\nLLMRequest\x12\x10\n\x08\x65ndpoint\x18\x01 \x01(\t\x12\r\n\x05model\x18\x02 \x01(\t\x12\x15\n\rmessages_json\x18\x03 \x01(\x0c\x12\x12\n\ntools_json\x18\x04 \x01(\x0c\x12.\n\x08sampling\x18\x05 \x01(\x0b\x32\x1c.openagora.v1.SamplingConfig\"^\n\x0bLLMResponse\x12\x14\n\x0c\x63hoices_json\x18\x01 \x01(\x0c\x12\"\n\x05usage\x18\x02 \x01(\x0b\x32\x13.openagora.v1.Usage\x12\x15\n\rlogprobs_json\x18\x03 \x01(\x0c\"h\n\x06Reward\x12\x0c\n\x04type\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x02\x12\x0e\n\x06source\x18\x03 \x01(\t\x12\x13\n\x0b\x64\x65tail_json\x18\x04 \x01(\x0c\x12\x0c\n\x04name\x18\x05 \x01(\t\x12\x0e\n\x06weight\x18\x06 \x01(\x02\"9\n\x05Usage\x12\x15\n\rprompt_tokens\x18\x01 \x01(\x05\x12\x19\n\x11\x63ompletion_tokens\x18\x02 \x01(\x05\"]\n\x0eSamplingConfig\x12\x13\n\x0btemperature\x18\x01 \x01(\x02\x12\r\n\x05top_p\x18\x02 \x01(\x02\x12\x0c\n\x04seed\x18\x03 \x01(\x03\x12\x19\n\x11max_tokens_budget\x18\x04 \x01(\x05\x42\x36Z4github.com/albert-lv/OpenAgora/go/proto/openagora/v1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1dopenagora/v1/trajectory.proto\x12\x0copenagora.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xcb\x02\n\x0eTrajectoryStep\x12\x12\n\nrollout_id\x18\x01 \x01(\t\x12\x0f\n\x07step_id\x18\x02 \x01(\x05\x12&\n\x02ts\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12)\n\x07request\x18\x04 \x01(\x0b\x32\x18.openagora.v1.LLMRequest\x12+\n\x08response\x18\x05 \x01(\x0b\x32\x19.openagora.v1.LLMResponse\x12%\n\x07rewards\x18\x06 \x03(\x0b\x32\x14.openagora.v1.Reward\x12<\n\x08metadata\x18\x07 \x03(\x0b\x32*.openagora.v1.TrajectoryStep.MetadataEntry\x1a/\n\rMetadataEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"\x88\x01\n\nLLMRequest\x12\x10\n\x08\x65ndpoint\x18\x01 \x01(\t\x12\r\n\x05model\x18\x02 \x01(\t\x12\x15\n\rmessages_json\x18\x03 \x01(\x0c\x12\x12\n\ntools_json\x18\x04 \x01(\x0c\x12.\n\x08sampling\x18\x05 \x01(\x0b\x32\x1c.openagora.v1.SamplingConfig\"\xae\x01\n\x0bLLMResponse\x12\x14\n\x0c\x63hoices_json\x18\x01 \x01(\x0c\x12\"\n\x05usage\x18\x02 \x01(\x0b\x32\x13.openagora.v1.Usage\x12\x15\n\rlogprobs_json\x18\x03 \x01(\x0c\x12\x18\n\x10prompt_token_ids\x18\x04 \x03(\x05\x12\x1c\n\x14\x63ompletion_token_ids\x18\x05 \x03(\x05\x12\x16\n\x0eweight_version\x18\x06 \x01(\t\"h\n\x06Reward\x12\x0c\n\x04type\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x02\x12\x0e\n\x06source\x18\x03 \x01(\t\x12\x13\n\x0b\x64\x65tail_json\x18\x04 \x01(\x0c\x12\x0c\n\x04name\x18\x05 \x01(\t\x12\x0e\n\x06weight\x18\x06 \x01(\x02\"9\n\x05Usage\x12\x15\n\rprompt_tokens\x18\x01 \x01(\x05\x12\x19\n\x11\x63ompletion_tokens\x18\x02 \x01(\x05\"]\n\x0eSamplingConfig\x12\x13\n\x0btemperature\x18\x01 \x01(\x02\x12\r\n\x05top_p\x18\x02 \x01(\x02\x12\x0c\n\x04seed\x18\x03 \x01(\x03\x12\x19\n\x11max_tokens_budget\x18\x04 \x01(\x05\x42\x36Z4github.com/albert-lv/OpenAgora/go/proto/openagora/v1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -41,12 +41,12 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_TRAJECTORYSTEP_METADATAENTRY']._serialized_end=412
   _globals['_LLMREQUEST']._serialized_start=415
   _globals['_LLMREQUEST']._serialized_end=551
-  _globals['_LLMRESPONSE']._serialized_start=553
-  _globals['_LLMRESPONSE']._serialized_end=647
-  _globals['_REWARD']._serialized_start=649
-  _globals['_REWARD']._serialized_end=753
-  _globals['_USAGE']._serialized_start=755
-  _globals['_USAGE']._serialized_end=812
-  _globals['_SAMPLINGCONFIG']._serialized_start=814
-  _globals['_SAMPLINGCONFIG']._serialized_end=907
+  _globals['_LLMRESPONSE']._serialized_start=554
+  _globals['_LLMRESPONSE']._serialized_end=728
+  _globals['_REWARD']._serialized_start=730
+  _globals['_REWARD']._serialized_end=834
+  _globals['_USAGE']._serialized_start=836
+  _globals['_USAGE']._serialized_end=893
+  _globals['_SAMPLINGCONFIG']._serialized_start=895
+  _globals['_SAMPLINGCONFIG']._serialized_end=988
 # @@protoc_insertion_point(module_scope)

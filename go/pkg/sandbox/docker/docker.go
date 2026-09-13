@@ -153,6 +153,25 @@ func (p *Provider) Stop(ctx context.Context, id string) error {
 	return nil
 }
 
+// Pause freezes a running container (docker pause), preserving all
+// in-container state for a later Unpause.
+func (p *Provider) Pause(ctx context.Context, id string) error {
+	_, stderr, err := p.run(ctx, "pause", id)
+	if err != nil {
+		return fmt.Errorf("docker pause %s: %w (stderr: %s)", id, err, string(stderr))
+	}
+	return nil
+}
+
+// Unpause resumes a container frozen by Pause.
+func (p *Provider) Unpause(ctx context.Context, id string) error {
+	_, stderr, err := p.run(ctx, "unpause", id)
+	if err != nil {
+		return fmt.Errorf("docker unpause %s: %w (stderr: %s)", id, err, string(stderr))
+	}
+	return nil
+}
+
 // Destroy removes a container and its resources.
 func (p *Provider) Destroy(ctx context.Context, sb *sandbox.Sandbox) error {
 	_, stderr, err := p.run(ctx, "rm", "-f", "-v", sb.ID)
@@ -188,16 +207,47 @@ func (p *Provider) Exec(ctx context.Context, id string, cmd []string) (*sandbox.
 
 // WaitForDone blocks until the sandbox signals completion
 // (by writing /sandbox/.arena/done or by exiting).
+// The primary path is event-driven: `docker wait` blocks until the container
+// exits, and the done marker is stat'ed locally via the /sandbox bind mount.
+// A low-frequency docker CLI poll remains as a safety net.
 func (p *Provider) WaitForDone(ctx context.Context, id string) error {
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
+	// docker wait returns immediately for already-exited containers.
+	waitCh := make(chan error, 1)
+	go func() {
+		_, _, err := p.run(ctx, "wait", id)
+		waitCh <- err
+	}()
+
+	// The done marker lives on the host via the /sandbox bind mount; stat it
+	// locally instead of shelling out to docker exec on every poll.
+	hostDone := p.hostDoneFile(ctx, id)
+
+	statTicker := time.NewTicker(200 * time.Millisecond)
+	defer statTicker.Stop()
+	fallbackTicker := time.NewTicker(2 * time.Second)
+	defer fallbackTicker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-ticker.C:
-			// Check container status.
+		case err := <-waitCh:
+			if err != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				return fmt.Errorf("docker wait: %w", err)
+			}
+			return nil
+		case <-statTicker.C:
+			if hostDone != "" {
+				if _, err := os.Stat(hostDone); err == nil {
+					return nil
+				}
+			}
+		case <-fallbackTicker.C:
+			// Safety net: covers a missed/failed docker wait and containers
+			// whose /sandbox mount could not be resolved on the host.
 			stdout, _, err := p.run(ctx, "inspect", "-f", "{{.State.Status}}", id)
 			if err != nil {
 				return fmt.Errorf("docker inspect: %w", err)
@@ -206,14 +256,28 @@ func (p *Provider) WaitForDone(ctx context.Context, id string) error {
 			if status == "exited" || status == "dead" {
 				return nil
 			}
-
-			// Check for done file.
-			res, err := p.Exec(ctx, id, []string{"test", "-f", "/sandbox/.arena/done"})
-			if err == nil && res.ExitCode == 0 {
-				return nil
+			if hostDone == "" {
+				res, err := p.Exec(ctx, id, []string{"test", "-f", "/sandbox/.arena/done"})
+				if err == nil && res.ExitCode == 0 {
+					return nil
+				}
 			}
 		}
 	}
+}
+
+// hostDoneFile resolves the host path of the container's done marker via the
+// /sandbox bind mount. Returns "" if the mount cannot be resolved.
+func (p *Provider) hostDoneFile(ctx context.Context, id string) string {
+	stdout, _, err := p.run(ctx, "inspect", "-f", `{{range .Mounts}}{{if eq .Destination "/sandbox"}}{{.Source}}{{end}}{{end}}`, id)
+	if err != nil {
+		return ""
+	}
+	src := strings.TrimSpace(string(stdout))
+	if src == "" {
+		return ""
+	}
+	return filepath.Join(src, ".arena", "done")
 }
 
 // Logs retrieves the stdout/stderr logs of a sandbox container.

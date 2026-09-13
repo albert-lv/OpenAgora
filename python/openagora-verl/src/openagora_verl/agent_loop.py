@@ -20,15 +20,22 @@ The agent loop will:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
+import random
 import time
 from typing import Any
 
 from openagora_sdk.client import ArenaClient
 from openagora_verl.logger import NoOpLogger, TrainingLogger
-from openagora_verl.utils import extract_logprobs, extract_response_text
+from openagora_verl.utils import (
+    extract_logprobs,
+    extract_native_token_ids,
+    extract_response_text,
+    extract_weight_versions,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -119,9 +126,22 @@ class ArenaAgentLoop(AgentLoopBase):  # type: ignore[valid-type,misc]
 
     - ``logger``: A :class:`openagora_verl.logger.TrainingLogger` instance for
       experiment tracking (TensorBoard, WandB, console, etc.). Defaults to no-op.
+    - ``prompt_length`` / ``response_length``: Max prompt/response tokens before
+      truncation. Overrides the veRL rollout config values; both default to 512.
+    - ``poll_initial_interval`` / ``poll_max_interval``: Bounds (in seconds) for
+      the exponential-backoff status poll. Default to 0.05s and 1.0s, or the
+      ``ARENA_POLL_INITIAL_INTERVAL`` / ``ARENA_POLL_MAX_INTERVAL`` env vars.
     """
 
-    def __init__(self, *args: Any, **kwargs: Any):
+    def __init__(
+        self,
+        *args: Any,
+        prompt_length: int | None = None,
+        response_length: int | None = None,
+        poll_initial_interval: float | None = None,
+        poll_max_interval: float | None = None,
+        **kwargs: Any,
+    ):
         # veRL's AgentLoopBase expects specific args, but we only need a subset.
         # Accept everything and extract what we need.
         super().__init__(*args, **kwargs)
@@ -153,12 +173,35 @@ class ArenaAgentLoop(AgentLoopBase):  # type: ignore[valid-type,misc]
         # Optional experiment-tracking logger.
         self._logger = self._resolve_logger(kwargs.get("logger"))
 
-        # Prompt / response length caps from veRL rollout config.
+        # Prompt / response length caps. Explicit constructor kwargs win over
+        # the veRL rollout config; both fall back to 512 for backward compat.
         rollout_cfg = getattr(self, "rollout_config", None)
         if rollout_cfg is None:
             rollout_cfg = kwargs.get("rollout_config")
-        self._prompt_length = getattr(rollout_cfg, "prompt_length", 512)
-        self._response_length = getattr(rollout_cfg, "response_length", 512)
+        self._prompt_length = (
+            prompt_length
+            if prompt_length is not None
+            else getattr(rollout_cfg, "prompt_length", 512)
+        )
+        self._response_length = (
+            response_length
+            if response_length is not None
+            else getattr(rollout_cfg, "response_length", 512)
+        )
+
+        # Status-poll bounds for the non-blocking wait in ``run``. The SDK is
+        # synchronous gRPC, so each poll is offloaded to a thread; the backoff
+        # keeps thousands of concurrent loops from hammering the Arena server.
+        self._poll_initial_interval = float(
+            poll_initial_interval
+            if poll_initial_interval is not None
+            else _get_env("ARENA_POLL_INITIAL_INTERVAL", "0.05")
+        )
+        self._poll_max_interval = float(
+            poll_max_interval
+            if poll_max_interval is not None
+            else _get_env("ARENA_POLL_MAX_INTERVAL", "1.0")
+        )
 
         logger.info(
             "ArenaAgentLoop initialized: endpoint=%s image=%s backend=%s",
@@ -211,7 +254,8 @@ class ArenaAgentLoop(AgentLoopBase):  # type: ignore[valid-type,misc]
             )
             prompt_ids = prompt_ids[-self._prompt_length :]
 
-        # 3. Create Arena rollout.
+        # 3. Create Arena rollout. The SDK is synchronous gRPC, so offload the
+        # call to a worker thread to keep the event loop responsive.
         # Allow per-sample task file override via extra_info (e.g., Code Colosseum problems).
         extra = kwargs.get("extra_info", {})
         if isinstance(extra, str):
@@ -244,7 +288,8 @@ class ArenaAgentLoop(AgentLoopBase):  # type: ignore[valid-type,misc]
         verify_cmd = extra.get("openagora_verify", self._verify_command)
 
         rollout_create_start = time.time()
-        rollout_info = self._arena.create_rollout(
+        rollout_info = await asyncio.to_thread(
+            self._arena.create_rollout,
             task_id=f"verl-{kwargs.get('index', '0')}",
             image=self._agent_image,
             llm_backend=self._llm_backend,
@@ -259,9 +304,10 @@ class ArenaAgentLoop(AgentLoopBase):  # type: ignore[valid-type,misc]
             "Arena rollout created: %s (%.2fs)", rollout_id, rollout_create_time
         )
 
-        # 4. Wait for completion.
+        # 4. Wait for completion using a non-blocking poll loop with
+        # exponential backoff + jitter (see _wait_for_rollout).
         wait_start = time.time()
-        result = self._arena.wait(rollout_id, timeout=self._timeout_seconds)
+        result = await self._wait_for_rollout(rollout_id, timeout=self._timeout_seconds)
         wait_time = time.time() - wait_start
         status = result.get("status", "unknown")
         reward_score = float(result.get("reward", 0.0))
@@ -273,27 +319,44 @@ class ArenaAgentLoop(AgentLoopBase):  # type: ignore[valid-type,misc]
             wait_time,
         )
 
-        # 5. Fetch trajectory and extract response text.
-        trajectory = self._arena.get_trajectory(rollout_id)
-        response_text = self._extract_response_text(trajectory)
+        # 5. Fetch trajectory (offloaded to a thread) and build response_ids.
+        # Prefer engine-native completion token IDs when the proxy captured
+        # them: they come from the same generation as the proxy-captured
+        # logprobs, which eliminates the train/inference tokenization
+        # mismatch of re-tokenizing response text.
+        trajectory = await asyncio.to_thread(self._arena.get_trajectory, rollout_id)
+        native_ids = extract_native_token_ids(trajectory)
+        if native_ids is not None:
+            response_ids = native_ids["completion_token_ids"]
+            if len(response_ids) > self._response_length:
+                logger.warning(
+                    "Response truncated from %d to %d tokens",
+                    len(response_ids),
+                    self._response_length,
+                )
+                response_ids = response_ids[: self._response_length]
+        else:
+            response_text = self._extract_response_text(trajectory)
 
-        # Handle empty response (e.g. agent never replied).
-        if not response_text or not response_text.strip():
-            response_text = "I could not generate a response."
+            # Handle empty response (e.g. agent never replied).
+            if not response_text or not response_text.strip():
+                response_text = "I could not generate a response."
 
-        # 6. Tokenize response.
-        response_ids = self._encode_text(response_text, add_generation_prompt=False)
-        if len(response_ids) > self._response_length:
-            logger.warning(
-                "Response truncated from %d to %d tokens",
-                len(response_ids),
-                self._response_length,
-            )
-            response_ids = response_ids[: self._response_length]
+            # 6. Re-tokenize response (fallback when native IDs are absent).
+            response_ids = self._encode_text(response_text, add_generation_prompt=False)
+            if len(response_ids) > self._response_length:
+                logger.warning(
+                    "Response truncated from %d to %d tokens",
+                    len(response_ids),
+                    self._response_length,
+                )
+                response_ids = response_ids[: self._response_length]
 
         response_mask = [1] * len(response_ids)
 
-        # 7. Extract per-token logprobs if available.
+        # 7. Extract per-token logprobs if available. Native IDs and proxy
+        # logprobs come from the same generation, so lengths should agree;
+        # extract_logprobs pads/truncates to len(response_ids) otherwise.
         response_logprobs = extract_logprobs(trajectory, len(response_ids))
 
         # 8. Count agent turns from the trajectory.
@@ -326,6 +389,17 @@ class ArenaAgentLoop(AgentLoopBase):  # type: ignore[valid-type,misc]
             extra_fields["min_global_steps"] = global_steps
             extra_fields["max_global_steps"] = global_steps
 
+        # Weight-version tracking for off-policy staleness. The rollout-level
+        # version is stamped by the server at CreateRollout; per-step versions
+        # (field 6 on LLMResponse) may differ across steps when a partial
+        # rollout was paused and resumed under newer weights.
+        if result.get("weight_version"):
+            extra_fields["weight_version"] = result["weight_version"]
+        step_weight_versions = extract_weight_versions(trajectory)
+        if step_weight_versions:
+            extra_fields["min_weight_version"] = min(step_weight_versions)
+            extra_fields["max_weight_version"] = max(step_weight_versions)
+
         # 10. Log to experiment tracker (TensorBoard/WandB/Console).
         self._logger.log_rollout(
             global_step=global_steps if isinstance(global_steps, int) else 0,
@@ -353,6 +427,34 @@ class ArenaAgentLoop(AgentLoopBase):  # type: ignore[valid-type,misc]
             metrics=metrics,
             extra_fields=extra_fields,
         )
+
+    _TERMINAL_STATUSES = ("success", "failed", "stopped")
+
+    async def _wait_for_rollout(
+        self, rollout_id: str, timeout: float
+    ) -> dict[str, Any]:
+        """Poll rollout status without blocking the event loop.
+
+        Each status check runs the synchronous SDK ``get_rollout`` call in a
+        worker thread via ``asyncio.to_thread``. The interval between checks
+        doubles from ``_poll_initial_interval`` up to ``_poll_max_interval``,
+        with jitter applied, so that thousands of concurrent agent loops
+        neither pin threads nor hammer the Arena server in lockstep.
+        """
+        start = time.monotonic()
+        delay = self._poll_initial_interval
+        while True:
+            info = await asyncio.to_thread(self._arena.get_rollout, rollout_id)
+            if info["status"] in self._TERMINAL_STATUSES:
+                return info
+            if time.monotonic() - start > timeout:
+                raise TimeoutError(
+                    f"rollout {rollout_id} did not complete within {timeout}s"
+                )
+            await asyncio.sleep(
+                min(delay * random.uniform(0.5, 1.5), self._poll_max_interval)
+            )
+            delay = min(delay * 2, self._poll_max_interval)
 
     def _apply_chat_template(self, messages: list[dict[str, Any]]) -> str:
         """Render messages to a single text string."""

@@ -89,24 +89,13 @@ func (s *ArenaServer) handleRolloutDetail(w http.ResponseWriter, r *http.Request
 
 	s.mu.RLock()
 	ro, ok := s.rollouts[rolloutID]
-	s.mu.RUnlock()
 	if !ok {
+		s.mu.RUnlock()
 		http.Error(w, "rollout not found", http.StatusNotFound)
 		return
 	}
-
-	// If trajectory subpath requested.
-	if len(parts) == 2 && parts[1] == "trajectory" {
-		s.handleTrajectory(w, r, rolloutID)
-		return
-	}
-
-	// If logs subpath requested.
-	if len(parts) == 2 && parts[1] == "logs" {
-		s.handleRolloutLogs(w, r, ro)
-		return
-	}
-
+	// Snapshot fields under the lock; verification results may be filled in
+	// asynchronously after the rollout reaches its terminal status.
 	resp := rolloutJSON{
 		ID:         ro.ID,
 		TraceID:    ro.TraceID,
@@ -116,12 +105,27 @@ func (s *ArenaServer) handleRolloutDetail(w http.ResponseWriter, r *http.Request
 		CreatedAt:  ro.CreatedAt,
 		FinishedAt: ro.FinishedAt,
 	}
+	sandboxID := ro.SandboxID
+	s.mu.RUnlock()
+
+	// If trajectory subpath requested.
+	if len(parts) == 2 && parts[1] == "trajectory" {
+		s.handleTrajectory(w, r, rolloutID)
+		return
+	}
+
+	// If logs subpath requested.
+	if len(parts) == 2 && parts[1] == "logs" {
+		s.handleRolloutLogs(w, r, sandboxID)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-func (s *ArenaServer) handleRolloutLogs(w http.ResponseWriter, r *http.Request, ro *Rollout) {
-	logs, err := s.sandboxProvider.Logs(r.Context(), ro.SandboxID, 100)
+func (s *ArenaServer) handleRolloutLogs(w http.ResponseWriter, r *http.Request, sandboxID string) {
+	logs, err := s.sandboxProvider.Logs(r.Context(), sandboxID, 100)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("read logs: %v", err), http.StatusInternalServerError)
 		return

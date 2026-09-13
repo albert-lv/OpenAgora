@@ -89,6 +89,13 @@ class ArenaRollout(BaseRollout):
             openagora_verify_command: Shell command to run for verification.
             arena_timeout_seconds: Max seconds to wait for a rollout.
             max_concurrent: Max parallel rollouts.
+            default_response_length: Fallback response token cap when the veRL
+                rollout config does not set ``response_length`` (default 512).
+            weight_sync_model_path: Shared-filesystem path of the HF checkpoint
+                directory the trainer saves each step, forwarded to the Arena
+                server on :meth:`update_weights`. Falls back to the
+                ``ARENA_WEIGHT_SYNC_MODEL_PATH`` env var. May be overridden per
+                call via the ``model_path`` kwarg.
     """
 
     def __init__(
@@ -103,6 +110,8 @@ class ArenaRollout(BaseRollout):
         openagora_verify_command: Optional[str] = None,
         arena_timeout_seconds: int = 3600,
         max_concurrent: int = 64,
+        default_response_length: int = 512,
+        weight_sync_model_path: Optional[str] = None,
         **kwargs,
     ):
         if _VERL_AVAILABLE:
@@ -125,6 +134,13 @@ class ArenaRollout(BaseRollout):
         )
         self._timeout_seconds = arena_timeout_seconds
         self._max_concurrent = max_concurrent
+        self._default_response_length = default_response_length
+        self._weight_sync_model_path = weight_sync_model_path or os.environ.get(
+            "ARENA_WEIGHT_SYNC_MODEL_PATH"
+        )
+        # Auto-incremented version used when update_weights is called without
+        # an explicit weight_version.
+        self._weight_version_counter = 0
 
         # Tokenizer / model references from model_config.
         self._tokenizer: Any = None
@@ -161,16 +177,77 @@ class ArenaRollout(BaseRollout):
         )
 
     # ------------------------------------------------------------------
-    # BaseRollout abstract methods (no-op for Arena because we don't
-    # manage GPU weights directly — the LLM backend does).
+    # BaseRollout abstract methods. Arena does not manage GPU weights
+    # directly — the separate LLM backend does — but weight updates are
+    # relayed to it through the Arena server's UpdateWeights RPC.
     # ------------------------------------------------------------------
+    def _ensure_client(self):
+        """Lazily create the Arena SDK client."""
+        if self._client is None:
+            from openagora_sdk.client import ArenaClient
+
+            self._client = ArenaClient(self._arena_endpoint)
+        return self._client
+
     async def resume(self, tags: list[str]):
         """No-op: Arena does not manage GPU KV cache or weights."""
         pass
 
-    async def update_weights(self, weights, **kwargs):
-        """No-op: weight updates go to the separate LLM backend."""
-        pass
+    async def update_weights(self, weights=None, **kwargs):
+        """Sync new trainer weights into the inference backend via Arena.
+
+        The Arena architecture expects the trainer to have saved an HF
+        checkpoint to a shared-filesystem path; the server then relays a disk
+        reload to the backend (SGLang ``update_weights_from_disk``; vLLM
+        pause/resume only). veRL's ``BaseRollout`` hook does not pass a
+        checkpoint path, so the path is resolved in order from:
+
+        1. ``model_path`` kwarg (or ``weights`` as a str/dict with
+           ``model_path``/``weight_version`` keys),
+        2. the ``weight_sync_model_path`` constructor kwarg,
+        3. the ``ARENA_WEIGHT_SYNC_MODEL_PATH`` env var.
+
+        ``weight_version`` comes from the same sources; when omitted an
+        auto-incremented counter is used. Called from trainer context, so a
+        plain synchronous SDK call is fine here (matching ``generate_sequences``).
+        Returns the server response dict, or ``None`` if no path is configured.
+        """
+        model_path = kwargs.get("model_path")
+        weight_version = kwargs.get("weight_version")
+        abort_in_flight = bool(kwargs.get("abort_in_flight", False))
+        if isinstance(weights, str):
+            model_path = model_path or weights
+        elif isinstance(weights, dict):
+            model_path = model_path or weights.get("model_path") or weights.get("path")
+            if weight_version is None:
+                weight_version = weights.get("weight_version")
+        model_path = model_path or self._weight_sync_model_path
+
+        if weight_version is None:
+            self._weight_version_counter += 1
+            weight_version = str(self._weight_version_counter)
+
+        if not model_path:
+            logger.warning(
+                "update_weights called without a checkpoint path; set "
+                "weight_sync_model_path or ARENA_WEIGHT_SYNC_MODEL_PATH. "
+                "Skipping weight sync (backend keeps serving old weights)."
+            )
+            return None
+
+        resp = self._ensure_client().update_weights(
+            model_path=model_path,
+            weight_version=str(weight_version),
+            abort_in_flight=abort_in_flight,
+        )
+        logger.info(
+            "Arena weight sync: path=%s version=%s success=%s message=%s",
+            model_path,
+            weight_version,
+            resp.get("success"),
+            resp.get("message"),
+        )
+        return resp
 
     async def release(self):
         """No-op: release any held resources."""
@@ -199,15 +276,15 @@ class ArenaRollout(BaseRollout):
         - ``batch['token_level_rewards']`` — per-response-token reward broadcast
         - ``non_tensor_batch['raw_prompt']`` — original text prompts
         - ``non_tensor_batch['arena_reward']`` — verification rewards
+        - ``non_tensor_batch['arena_weight_version']`` — server-stamped weight
+          version per sample (for off-policy staleness measurement)
         """
         if not _VERL_AVAILABLE:
             raise RuntimeError("veRL is not installed; ArenaRollout requires verl.")
 
-        from openagora_sdk.client import ArenaClient
         from concurrent.futures import ThreadPoolExecutor
 
-        if self._client is None:
-            self._client = ArenaClient(self._arena_endpoint)
+        self._ensure_client()
 
         input_ids = prompts.batch["input_ids"]
         attention_mask = prompts.batch["attention_mask"]
@@ -225,7 +302,9 @@ class ArenaRollout(BaseRollout):
         temperature = getattr(self.config, "temperature", 1.0)
         top_p = getattr(self.config, "top_p", 1.0)
         seed = getattr(self.config, "seed", 0)
-        response_length = getattr(self.config, "response_length", 512)
+        response_length = getattr(self.config, "response_length", None)
+        if not response_length:
+            response_length = self._default_response_length
         n = getattr(self.config, "n", 1)  # n>1 sampling for GRPO.
         if n < 1:
             n = 1
@@ -365,6 +444,7 @@ class ArenaRollout(BaseRollout):
         expanded_prompts = []
         expanded_rewards = []
         expanded_status = []
+        expanded_weight_versions = []
         for i in range(batch_size):
             for j in range(n):
                 idx = i * n + j
@@ -373,11 +453,17 @@ class ArenaRollout(BaseRollout):
                 expanded_status.append(
                     results[idx]["status"] if idx < len(results) else "unknown"
                 )
+                expanded_weight_versions.append(
+                    results[idx].get("weight_version", "") if idx < len(results) else ""
+                )
 
         non_tensor_batch = {
             "raw_prompt": np.array(expanded_prompts, dtype=object),
             "arena_reward": np.array(expanded_rewards, dtype=object),
             "arena_status": np.array(expanded_status, dtype=object),
+            # Server-stamped weight version per sample, so trainers can
+            # measure off-policy staleness against the current policy version.
+            "arena_weight_version": np.array(expanded_weight_versions, dtype=object),
         }
 
         return DataProto(
@@ -433,6 +519,7 @@ class ArenaRollout(BaseRollout):
             "log_probs": log_probs,
             "reward": float(result.get("reward", 0.0)),
             "status": result.get("status", "unknown"),
+            "weight_version": result.get("weight_version", ""),
             "rollout_id": rollout_id,
         }
 
@@ -443,6 +530,7 @@ class ArenaRollout(BaseRollout):
             "log_probs": [0.0] * response_length,
             "reward": 0.0,
             "status": "failed",
+            "weight_version": "",
             "rollout_id": "",
         }
 

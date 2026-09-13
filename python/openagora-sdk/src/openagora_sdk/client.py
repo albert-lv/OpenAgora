@@ -1,4 +1,6 @@
+import asyncio
 import grpc
+import random
 import time
 from typing import Iterator, Optional
 
@@ -53,6 +55,31 @@ def _verification_report_to_dict(report) -> Optional[dict]:
     }
 
 
+class _PollBackoff:
+    """Exponential backoff with full jitter for status polling.
+
+    Each call to :meth:`next_delay` returns a random delay in
+    ``[0, current]`` and grows ``current`` geometrically up to ``maximum``.
+    """
+
+    def __init__(self, initial: float, maximum: float, multiplier: float):
+        if initial <= 0:
+            raise ValueError("initial interval must be positive")
+        if maximum < initial:
+            raise ValueError("maximum interval must be >= initial interval")
+        if multiplier < 1.0:
+            raise ValueError("multiplier must be >= 1.0")
+        self.initial = initial
+        self.maximum = maximum
+        self.multiplier = multiplier
+        self._current = initial
+
+    def next_delay(self) -> float:
+        delay = random.uniform(0.0, self._current)
+        self._current = min(self._current * self.multiplier, self.maximum)
+        return delay
+
+
 class ArenaClient:
     """Python client for Arena gRPC server."""
 
@@ -61,10 +88,16 @@ class ArenaClient:
         endpoint: str = "localhost:9090",
         default_timeout: float = 30.0,
         create_retries: int = 3,
+        poll_initial_interval: float = 0.1,
+        poll_max_interval: float = 2.0,
+        poll_backoff_multiplier: float = 2.0,
     ):
         self.endpoint = endpoint
         self.default_timeout = default_timeout
         self.create_retries = max(1, create_retries)
+        self.poll_initial_interval = poll_initial_interval
+        self.poll_max_interval = poll_max_interval
+        self.poll_backoff_multiplier = poll_backoff_multiplier
         # Use round_robin to try all resolved addresses (IPv4 + IPv6).
         options = [("grpc.lb_policy_name", "round_robin")]
         self.channel = grpc.insecure_channel(endpoint, options=options)
@@ -174,23 +207,86 @@ class ArenaClient:
             "task_id": r.task_id,
             "status": r.status,
             "reward": r.reward,
+            "weight_version": r.weight_version,
             "verification_report": _verification_report_to_dict(r.verification_report),
         }
 
+    def _poll_backoff(self) -> _PollBackoff:
+        return _PollBackoff(
+            initial=self.poll_initial_interval,
+            maximum=self.poll_max_interval,
+            multiplier=self.poll_backoff_multiplier,
+        )
+
     def wait(
-        self, rollout_id: str, poll_interval: float = 1.0, timeout: float = 3600.0
+        self,
+        rollout_id: str,
+        poll_interval: Optional[float] = None,
+        timeout: float = 3600.0,
+        return_on_pause: bool = False,
     ) -> dict:
-        """Wait for a rollout to complete and return result."""
+        """Wait for a rollout to complete and return result.
+
+        By default the rollout status is polled with exponential backoff
+        (full jitter) from ``poll_initial_interval`` up to
+        ``poll_max_interval``. Pass an explicit ``poll_interval`` to use a
+        fixed sleep between polls instead (legacy behavior).
+
+        ``paused`` is not a terminal status: with the default
+        ``return_on_pause=False`` a paused rollout keeps polling until it
+        resumes and finishes or ``timeout`` fires. Pass
+        ``return_on_pause=True`` to treat ``paused`` like a terminal state
+        and return the rollout dict as soon as it is observed. Trainers that
+        pause stragglers for partial rollout should either use
+        ``return_on_pause=True`` here or track paused rollout IDs themselves
+        and resume them with :meth:`resume_rollout`.
+        """
         start = time.time()
+        backoff = None if poll_interval is not None else self._poll_backoff()
         while True:
             info = self.get_rollout(rollout_id)
             if info["status"] in ("success", "failed", "stopped"):
+                return info
+            if return_on_pause and info["status"] == "paused":
                 return info
             if time.time() - start > timeout:
                 raise TimeoutError(
                     f"rollout {rollout_id} did not complete within {timeout}s"
                 )
-            time.sleep(poll_interval)
+            delay = poll_interval if poll_interval is not None else backoff.next_delay()
+            time.sleep(delay)
+
+    async def wait_async(
+        self,
+        rollout_id: str,
+        poll_interval: Optional[float] = None,
+        timeout: float = 3600.0,
+        return_on_pause: bool = False,
+    ) -> dict:
+        """Async variant of :meth:`wait`.
+
+        Synchronous gRPC calls run in a worker thread via
+        :func:`asyncio.to_thread` and delays use :func:`asyncio.sleep`, so
+        many rollouts can be awaited concurrently on one event loop.
+
+        See :meth:`wait` for the meaning of ``return_on_pause``; trainers
+        pausing stragglers for partial rollout should pass
+        ``return_on_pause=True`` or track paused rollout IDs themselves.
+        """
+        start = time.time()
+        backoff = None if poll_interval is not None else self._poll_backoff()
+        while True:
+            info = await asyncio.to_thread(self.get_rollout, rollout_id)
+            if info["status"] in ("success", "failed", "stopped"):
+                return info
+            if return_on_pause and info["status"] == "paused":
+                return info
+            if time.time() - start > timeout:
+                raise TimeoutError(
+                    f"rollout {rollout_id} did not complete within {timeout}s"
+                )
+            delay = poll_interval if poll_interval is not None else backoff.next_delay()
+            await asyncio.sleep(delay)
 
     def stream_trajectory(self, rollout_id: str) -> Iterator[dict]:
         """Stream trajectory steps in real-time."""
@@ -218,6 +314,15 @@ class ArenaClient:
                     "logprobs_json": step.response.logprobs_json
                     if step.response
                     else None,
+                    "prompt_token_ids": list(step.response.prompt_token_ids)
+                    if step.response
+                    else [],
+                    "completion_token_ids": list(step.response.completion_token_ids)
+                    if step.response
+                    else [],
+                    "weight_version": step.response.weight_version
+                    if step.response
+                    else "",
                 }
                 if step.response
                 else None,
@@ -256,6 +361,15 @@ class ArenaClient:
                         "logprobs_json": step.response.logprobs_json
                         if step.response
                         else None,
+                        "prompt_token_ids": list(step.response.prompt_token_ids)
+                        if step.response
+                        else [],
+                        "completion_token_ids": list(step.response.completion_token_ids)
+                        if step.response
+                        else [],
+                        "weight_version": step.response.weight_version
+                        if step.response
+                        else "",
                     }
                     if step.response
                     else None,
@@ -274,6 +388,7 @@ class ArenaClient:
                 "task_id": r.task_id,
                 "status": r.status,
                 "reward": r.reward,
+                "weight_version": r.weight_version,
                 "verification_report": _verification_report_to_dict(
                     r.verification_report
                 ),
@@ -285,6 +400,74 @@ class ArenaClient:
         """Stop a running rollout."""
         req = arena_pb.StopRolloutRequest(rollout_id=rollout_id)
         self._call(self.stub.StopRollout, req)
+
+    def pause_rollout(self, rollout_id: str, mode: str = "freeze") -> None:
+        """Pause a running rollout (partial rollout).
+
+        ``mode="freeze"`` freezes the sandbox in place (e.g. docker pause),
+        preserving agent state so it can be resumed later with
+        :meth:`resume_rollout` under whatever weights the backend serves then.
+        """
+        req = arena_pb.PauseRolloutRequest(rollout_id=rollout_id, mode=mode)
+        self._call(self.stub.PauseRollout, req)
+
+    def resume_rollout(self, rollout_id: str) -> dict:
+        """Resume a paused rollout.
+
+        Returns the rollout's ``proxy_url`` and ``token``; the agent's
+        subsequent LLM calls are served by the currently deployed weights.
+        """
+        req = arena_pb.ResumeRolloutRequest(rollout_id=rollout_id)
+        resp = self._call(self.stub.ResumeRollout, req)
+        return {
+            "proxy_url": resp.proxy_url,
+            "token": resp.token,
+        }
+
+    def update_weights(
+        self,
+        model_path: str,
+        weight_version: str,
+        abort_in_flight: bool = False,
+    ) -> dict:
+        """Ask the server to sync new weights into the inference backend.
+
+        ``model_path`` is a shared-filesystem path to an HF checkpoint the
+        trainer has saved; ``weight_version`` is an opaque version string the
+        server stamps on rollouts created afterwards. With
+        ``abort_in_flight=True`` the backend may abort in-flight generations
+        instead of draining them.
+        """
+        req = arena_pb.UpdateWeightsRequest(
+            model_path=model_path,
+            weight_version=weight_version,
+            abort_in_flight=abort_in_flight,
+        )
+        resp = self._call(self.stub.UpdateWeights, req)
+        return {
+            "success": resp.success,
+            "message": resp.message,
+            "weight_version": resp.weight_version,
+        }
+
+    async def pause_rollout_async(self, rollout_id: str, mode: str = "freeze") -> None:
+        """Async variant of :meth:`pause_rollout` (runs gRPC in a thread)."""
+        await asyncio.to_thread(self.pause_rollout, rollout_id, mode)
+
+    async def resume_rollout_async(self, rollout_id: str) -> dict:
+        """Async variant of :meth:`resume_rollout` (runs gRPC in a thread)."""
+        return await asyncio.to_thread(self.resume_rollout, rollout_id)
+
+    async def update_weights_async(
+        self,
+        model_path: str,
+        weight_version: str,
+        abort_in_flight: bool = False,
+    ) -> dict:
+        """Async variant of :meth:`update_weights` (runs gRPC in a thread)."""
+        return await asyncio.to_thread(
+            self.update_weights, model_path, weight_version, abort_in_flight
+        )
 
     def close(self) -> None:
         """Close the gRPC channel."""

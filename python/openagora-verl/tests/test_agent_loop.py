@@ -1,7 +1,11 @@
 """Unit tests for ArenaAgentLoop."""
 
+import asyncio
+import random
 import sys
+import time
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -131,6 +135,7 @@ def mock_arena_client(monkeypatch):
     client = MagicMock()
     client.create_rollout.return_value = {"rollout_id": "test-rollout-123"}
     client.wait.return_value = {"status": "success", "reward": 1.0}
+    client.get_rollout.return_value = {"status": "success", "reward": 1.0}
     client.get_trajectory.return_value = [
         {
             "step_id": 1,
@@ -160,6 +165,8 @@ def arena_loop(fake_tokenizer, mock_arena_client):
     loop._llm_backend = "http://test:8000/v1"
     loop._verify_command = "true"
     loop._timeout_seconds = 60
+    loop._poll_initial_interval = 0.01
+    loop._poll_max_interval = 0.05
     loop._arena = mock_arena_client
     loop._logger = NoOpLogger()
     return loop
@@ -351,3 +358,297 @@ class TestCountAgentTurns:
             "response": {"choices_json": b"[]"},
         }
         assert arena_loop._count_agent_turns([step]) == 1  # min 1
+
+
+@pytest.mark.asyncio
+class TestAsyncRun:
+    async def test_concurrent_runs_do_not_block_event_loop(
+        self, arena_loop, mock_arena_client
+    ):
+        """Two runs over a slow synchronous SDK should overlap, not serialize."""
+
+        def slow_create_rollout(**kwargs):
+            time.sleep(0.4)  # blocking, like a slow sync gRPC call
+            return {"rollout_id": "test-rollout-slow"}
+
+        mock_arena_client.create_rollout.side_effect = slow_create_rollout
+
+        start = time.monotonic()
+        out1, out2 = await asyncio.gather(
+            arena_loop.run(
+                sampling_params={},
+                raw_prompt=[{"role": "user", "content": "Write a function."}],
+                index=0,
+            ),
+            arena_loop.run(
+                sampling_params={},
+                raw_prompt=[{"role": "user", "content": "Write a function."}],
+                index=1,
+            ),
+        )
+        elapsed = time.monotonic() - start
+
+        assert out1.reward_score == 1.0
+        assert out2.reward_score == 1.0
+        # Serialized blocking calls would take ~0.8s; offloaded to threads the
+        # two create_rollout calls overlap (~0.4s).
+        assert elapsed < 0.7
+
+    async def test_run_polls_without_blocking_wait(self, arena_loop, mock_arena_client):
+        """run() must poll via get_rollout (in a thread), never call wait()."""
+        await arena_loop.run(
+            sampling_params={},
+            raw_prompt=[{"role": "user", "content": "Write a function."}],
+            index=0,
+        )
+        mock_arena_client.wait.assert_not_called()
+        mock_arena_client.get_rollout.assert_called_once_with("test-rollout-123")
+
+
+@pytest.mark.asyncio
+class TestWaitForRollout:
+    async def test_exponential_backoff_with_cap(
+        self, arena_loop, mock_arena_client, monkeypatch
+    ):
+        """Poll intervals double from the initial value up to the cap."""
+        sleeps = []
+
+        async def fake_sleep(duration):
+            sleeps.append(duration)
+
+        monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+        # Remove jitter so the backoff progression is deterministic.
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+
+        mock_arena_client.get_rollout.side_effect = [
+            {"status": "running"},
+            {"status": "running"},
+            {"status": "running"},
+            {"status": "success", "reward": 1.0},
+        ]
+        arena_loop._poll_initial_interval = 0.1
+        arena_loop._poll_max_interval = 0.25
+
+        result = await arena_loop._wait_for_rollout("r-backoff", timeout=10)
+
+        assert result["status"] == "success"
+        assert sleeps == [0.1, 0.2, 0.25]
+        assert mock_arena_client.get_rollout.call_count == 4
+
+    async def test_jittered_sleeps_stay_within_cap(
+        self, arena_loop, mock_arena_client, monkeypatch
+    ):
+        """With jitter enabled, no sleep exceeds the max interval."""
+        sleeps = []
+
+        async def fake_sleep(duration):
+            sleeps.append(duration)
+
+        monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+
+        mock_arena_client.get_rollout.side_effect = [{"status": "running"}] * 5 + [
+            {"status": "success", "reward": 1.0}
+        ]
+        arena_loop._poll_initial_interval = 0.05
+        arena_loop._poll_max_interval = 0.1
+
+        result = await arena_loop._wait_for_rollout("r-jitter", timeout=10)
+
+        assert result["status"] == "success"
+        assert len(sleeps) == 5
+        assert all(0.0 <= s <= 0.1 for s in sleeps)
+
+    async def test_failed_status_is_terminal(self, arena_loop, mock_arena_client):
+        mock_arena_client.get_rollout.return_value = {"status": "failed", "reward": 0.0}
+        result = await arena_loop._wait_for_rollout("r-failed", timeout=10)
+        assert result["status"] == "failed"
+        assert mock_arena_client.get_rollout.call_count == 1
+
+    async def test_timeout_raises(self, arena_loop, mock_arena_client):
+        mock_arena_client.get_rollout.return_value = {"status": "running"}
+        arena_loop._poll_initial_interval = 0.005
+        arena_loop._poll_max_interval = 0.01
+        with pytest.raises(TimeoutError, match="did not complete"):
+            await arena_loop._wait_for_rollout("r-stuck", timeout=0.05)
+
+
+class TestConfigurableLengths:
+    def test_defaults_are_512(self):
+        loop = ArenaAgentLoop()
+        assert loop._prompt_length == 512
+        assert loop._response_length == 512
+
+    def test_constructor_kwargs(self):
+        loop = ArenaAgentLoop(prompt_length=256, response_length=1024)
+        assert loop._prompt_length == 256
+        assert loop._response_length == 1024
+
+    def test_rollout_config_fallback(self):
+        cfg = SimpleNamespace(prompt_length=64, response_length=32)
+        loop = ArenaAgentLoop(rollout_config=cfg)
+        assert loop._prompt_length == 64
+        assert loop._response_length == 32
+
+    def test_constructor_kwargs_override_rollout_config(self):
+        cfg = SimpleNamespace(prompt_length=64, response_length=32)
+        loop = ArenaAgentLoop(prompt_length=128, rollout_config=cfg)
+        assert loop._prompt_length == 128
+        assert loop._response_length == 32
+
+    def test_poll_interval_defaults(self, monkeypatch):
+        monkeypatch.delenv("ARENA_POLL_INITIAL_INTERVAL", raising=False)
+        monkeypatch.delenv("ARENA_POLL_MAX_INTERVAL", raising=False)
+        loop = ArenaAgentLoop()
+        assert loop._poll_initial_interval == 0.05
+        assert loop._poll_max_interval == 1.0
+
+    def test_poll_intervals_from_env(self, monkeypatch):
+        monkeypatch.setenv("ARENA_POLL_INITIAL_INTERVAL", "0.2")
+        monkeypatch.setenv("ARENA_POLL_MAX_INTERVAL", "3")
+        loop = ArenaAgentLoop()
+        assert loop._poll_initial_interval == 0.2
+        assert loop._poll_max_interval == 3.0
+
+    @pytest.mark.asyncio
+    async def test_run_truncates_to_configured_lengths(self, arena_loop):
+        arena_loop._prompt_length = 2
+        arena_loop._response_length = 2
+        out = await arena_loop.run(
+            sampling_params={},
+            raw_prompt=[{"role": "user", "content": "Write a function."}],
+            index=0,
+        )
+        assert len(out.prompt_ids) == 2
+        assert len(out.response_ids) == 2
+        assert len(out.response_mask) == 2
+        assert len(out.response_logprobs) == 2
+
+
+@pytest.mark.asyncio
+class TestNativeTokenIds:
+    async def test_native_ids_used_without_retokenization(
+        self, arena_loop, mock_arena_client
+    ):
+        mock_arena_client.get_trajectory.return_value = [
+            {
+                "step_id": 1,
+                "response": {
+                    "choices_json": b'[{"message": {"role": "assistant", "content": "def add(): pass"}}]',
+                    "prompt_token_ids": [1, 2, 3],
+                    "completion_token_ids": [7, 8, 9],
+                },
+            }
+        ]
+        encode_calls = []
+        orig_encode = arena_loop._encode_text
+
+        def spy(text, add_generation_prompt=False):
+            encode_calls.append(text)
+            return orig_encode(text, add_generation_prompt=add_generation_prompt)
+
+        arena_loop._encode_text = spy
+
+        out = await arena_loop.run(
+            sampling_params={},
+            raw_prompt=[{"role": "user", "content": "Write a function."}],
+            index=0,
+        )
+
+        # response_ids come verbatim from the engine-native token IDs.
+        assert out.response_ids == [7, 8, 9]
+        assert out.response_mask == [1, 1, 1]
+        # The tokenizer was only used for the prompt, never for the response.
+        assert len(encode_calls) == 1
+
+    async def test_native_ids_truncated_to_response_length(
+        self, arena_loop, mock_arena_client
+    ):
+        arena_loop._response_length = 2
+        mock_arena_client.get_trajectory.return_value = [
+            {
+                "step_id": 1,
+                "response": {
+                    "choices_json": b'[{"message": {"role": "assistant", "content": "x"}}]',
+                    "completion_token_ids": [7, 8, 9],
+                },
+            }
+        ]
+        out = await arena_loop.run(
+            sampling_params={},
+            raw_prompt=[{"role": "user", "content": "Write a function."}],
+            index=0,
+        )
+        assert out.response_ids == [7, 8]
+        assert out.response_mask == [1, 1]
+
+    async def test_fallback_retokenizes_when_native_ids_absent(
+        self, arena_loop, mock_arena_client
+    ):
+        # Default mock trajectory has no token-id fields.
+        encode_calls = []
+        orig_encode = arena_loop._encode_text
+
+        def spy(text, add_generation_prompt=False):
+            encode_calls.append(text)
+            return orig_encode(text, add_generation_prompt=add_generation_prompt)
+
+        arena_loop._encode_text = spy
+
+        out = await arena_loop.run(
+            sampling_params={},
+            raw_prompt=[{"role": "user", "content": "Write a function."}],
+            index=0,
+        )
+
+        # Prompt + response were both tokenized via the tokenizer.
+        assert len(encode_calls) == 2
+        # "def add(): pass" re-tokenized by FakeTokenizer.
+        assert out.response_ids == [3, 99, 99]
+
+    async def test_mixed_weight_versions_propagated(
+        self, arena_loop, mock_arena_client
+    ):
+        mock_arena_client.get_rollout.return_value = {
+            "status": "success",
+            "reward": 1.0,
+            "weight_version": "v1",
+        }
+        mock_arena_client.get_trajectory.return_value = [
+            {
+                "step_id": 1,
+                "response": {
+                    "choices_json": b'[{"message": {"role": "assistant", "content": "hello"}}]',
+                    "completion_token_ids": [7],
+                    "weight_version": "v1",
+                },
+            },
+            {
+                "step_id": 2,
+                "response": {
+                    "choices_json": b'[{"message": {"role": "assistant", "content": "world"}}]',
+                    "completion_token_ids": [8],
+                    "weight_version": "v2",
+                },
+            },
+        ]
+        out = await arena_loop.run(
+            sampling_params={},
+            raw_prompt=[{"role": "user", "content": "Write a function."}],
+            index=0,
+        )
+        assert out.response_ids == [7, 8]
+        assert out.extra_fields["weight_version"] == "v1"
+        assert out.extra_fields["min_weight_version"] == "v1"
+        assert out.extra_fields["max_weight_version"] == "v2"
+
+    async def test_no_weight_version_keys_when_absent(
+        self, arena_loop, mock_arena_client
+    ):
+        out = await arena_loop.run(
+            sampling_params={},
+            raw_prompt=[{"role": "user", "content": "Write a function."}],
+            index=0,
+        )
+        assert "weight_version" not in out.extra_fields
+        assert "min_weight_version" not in out.extra_fields
+        assert "max_weight_version" not in out.extra_fields

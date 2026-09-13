@@ -32,11 +32,12 @@ type RolloutState struct {
 // Proxy is the core Arena component that transparently intercepts
 // all communication between an agent and the LLM backend.
 type Proxy struct {
-	backend *url.URL
-	logger  *zap.Logger
-	writer  trajectory.Writer
-	client  *http.Client
-	metrics MetricsRecorder
+	backend     *url.URL
+	backendType string // "sglang" | "vllm" | ""; enables backend-specific capture
+	logger      *zap.Logger
+	writer      trajectory.Writer
+	client      *http.Client
+	metrics     MetricsRecorder
 
 	mu       sync.RWMutex
 	rollouts map[string]*RolloutState // key = rollout token
@@ -55,9 +56,40 @@ func (p *Proxy) SetMetrics(m MetricsRecorder) {
 	p.metrics = m
 }
 
+// DefaultHTTPTimeout is the default timeout for proxied backend calls.
+const DefaultHTTPTimeout = 120 * time.Second
+
+// Option configures a Proxy.
+type Option func(*Proxy)
+
+// WithHTTPTimeout sets the timeout for backend HTTP calls made by the proxy.
+// Values <= 0 keep the default.
+func WithHTTPTimeout(d time.Duration) Option {
+	return func(p *Proxy) {
+		if d > 0 {
+			p.client.Timeout = d
+		}
+	}
+}
+
+// WithBackendType declares the inference backend type ("sglang" or "vllm"),
+// enabling backend-specific request fields and response capture.
+func WithBackendType(backendType string) Option {
+	return func(p *Proxy) {
+		p.backendType = backendType
+	}
+}
+
+// SetBackendType sets the inference backend type after construction.
+func (p *Proxy) SetBackendType(backendType string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.backendType = backendType
+}
+
 // NewProxy creates a new LLM proxy instance.
 // backendURL may be empty; in that case every rollout must provide its own BackendURL.
-func NewProxy(backendURL string, writer trajectory.Writer, logger *zap.Logger) (*Proxy, error) {
+func NewProxy(backendURL string, writer trajectory.Writer, logger *zap.Logger, opts ...Option) (*Proxy, error) {
 	var u *url.URL
 	if backendURL != "" {
 		var err error
@@ -66,13 +98,17 @@ func NewProxy(backendURL string, writer trajectory.Writer, logger *zap.Logger) (
 			return nil, err
 		}
 	}
-	return &Proxy{
+	p := &Proxy{
 		backend:  u,
 		logger:   logger,
 		writer:   writer,
-		client:   &http.Client{Timeout: 120 * time.Second},
+		client:   &http.Client{Timeout: DefaultHTTPTimeout},
 		rollouts: make(map[string]*RolloutState),
-	}, nil
+	}
+	for _, opt := range opts {
+		opt(p)
+	}
+	return p, nil
 }
 
 // RegisterRollout registers a new rollout so that subsequent requests
@@ -174,7 +210,7 @@ func (p *Proxy) handleChatCompletions(w http.ResponseWriter, r *http.Request, rs
 	_ = r.Body.Close()
 
 	// 1. Inject sampling parameters.
-	body, err = injectSampling(body, rs.Sampling, rs.BackendURL)
+	body, err = injectSampling(body, rs.Sampling, rs.BackendURL, p.backendType)
 	if err != nil {
 		p.logger.Warn("failed to inject sampling", zap.Error(err))
 		// Continue with original body on injection failure.
@@ -263,6 +299,8 @@ func (p *Proxy) nonStreamResponse(w http.ResponseWriter, respBody io.Reader, rs 
 	var respMap map[string]any
 	promptTokens, completionTokens := 0, 0
 	var logprobsBytes []byte
+	var promptIDs, completionIDs []int32
+	var weightVersion string
 	if json.Unmarshal(respBytes, &respMap) == nil {
 		if usage, ok := respMap["usage"].(map[string]any); ok {
 			if v, ok := usage["prompt_tokens"].(float64); ok {
@@ -280,6 +318,8 @@ func (p *Proxy) nonStreamResponse(w http.ResponseWriter, respBody io.Reader, rs 
 				}
 			}
 		}
+		// Capture engine-native token IDs if the backend reports them.
+		promptIDs, completionIDs, weightVersion = extractEngineTokenIDs(respMap)
 	}
 
 	if p.metrics != nil {
@@ -287,7 +327,7 @@ func (p *Proxy) nonStreamResponse(w http.ResponseWriter, respBody io.Reader, rs 
 		p.metrics.Inc("arena_tokens_total", uint64(completionTokens), "completion")
 	}
 
-	p.recordStep(rs, reqBody, respBytes, promptTokens, completionTokens, logprobsBytes)
+	p.recordStep(rs, reqBody, respBytes, promptTokens, completionTokens, logprobsBytes, promptIDs, completionIDs, weightVersion)
 
 	if rs.BudgetLimit > 0 {
 		_, _, over := p.addUsage(rs.Token, promptTokens, completionTokens)
@@ -311,6 +351,8 @@ func (p *Proxy) streamResponse(w http.ResponseWriter, respBody io.Reader, rs *Ro
 	var fullContent strings.Builder
 	promptTokens, completionTokens := 0, 0
 	var lastChunk []byte
+	var promptIDs, completionIDs []int32
+	var weightVersion string
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -356,6 +398,21 @@ func (p *Proxy) streamResponse(w http.ResponseWriter, respBody io.Reader, rs *Ro
 			}
 			if v, ok := usage["completion_tokens"].(float64); ok {
 				completionTokens = int(v)
+			}
+		}
+
+		// Capture engine-native token IDs if a chunk carries them (SGLang
+		// attaches meta_info to streamed chunks).
+		if len(promptIDs) == 0 || len(completionIDs) == 0 {
+			p, c, wv := extractEngineTokenIDs(chunk)
+			if len(promptIDs) == 0 {
+				promptIDs = p
+			}
+			if len(completionIDs) == 0 {
+				completionIDs = c
+			}
+			if weightVersion == "" {
+				weightVersion = wv
 			}
 		}
 	}
@@ -406,7 +463,7 @@ func (p *Proxy) streamResponse(w http.ResponseWriter, respBody io.Reader, rs *Ro
 
 	syntheticBytes, _ := json.Marshal(syntheticResp)
 	// Streaming responses typically don't carry per-token logprobs.
-	p.recordStep(rs, reqBody, syntheticBytes, promptTokens, completionTokens, nil)
+	p.recordStep(rs, reqBody, syntheticBytes, promptTokens, completionTokens, nil, promptIDs, completionIDs, weightVersion)
 
 	if rs.BudgetLimit > 0 {
 		_, _, over := p.addUsage(rs.Token, promptTokens, completionTokens)
@@ -468,38 +525,48 @@ func (p *Proxy) newBackendRequest(r *http.Request, body []byte, backend *url.URL
 }
 
 // injectSampling rewrites the request JSON to enforce per-rollout sampling params.
-func injectSampling(body []byte, sampling *trajectory.SamplingConfig, backendURL *url.URL) ([]byte, error) {
-	if sampling == nil {
+func injectSampling(body []byte, sampling *trajectory.SamplingConfig, backendURL *url.URL, backendType string) ([]byte, error) {
+	if sampling == nil && backendType == "" {
 		return body, nil
 	}
 	var req map[string]any
 	if err := json.Unmarshal(body, &req); err != nil {
 		return body, err
 	}
-	if sampling.Temperature != 0 {
-		req["temperature"] = sampling.Temperature
-	}
-	if sampling.TopP != 0 {
-		req["top_p"] = sampling.TopP
-	}
-	if sampling.Seed != 0 {
-		req["seed"] = sampling.Seed
-	}
-	if sampling.MaxTokensBudget > 0 {
-		// Cap max_tokens to remaining budget if present; otherwise leave as-is.
-		if _, hasMaxTokens := req["max_tokens"]; hasMaxTokens {
-			// We'll enforce budget at proxy level rather than rewriting max_tokens
-			// to avoid interfering with agent's intent.
-			_ = hasMaxTokens
+	if sampling != nil {
+		if sampling.Temperature != 0 {
+			req["temperature"] = sampling.Temperature
+		}
+		if sampling.TopP != 0 {
+			req["top_p"] = sampling.TopP
+		}
+		if sampling.Seed != 0 {
+			req["seed"] = sampling.Seed
+		}
+		if sampling.MaxTokensBudget > 0 {
+			// Cap max_tokens to remaining budget if present; otherwise leave as-is.
+			if _, hasMaxTokens := req["max_tokens"]; hasMaxTokens {
+				// We'll enforce budget at proxy level rather than rewriting max_tokens
+				// to avoid interfering with agent's intent.
+				_ = hasMaxTokens
+			}
+		}
+		// Request logprobs from backend to support RL training.
+		// Note: ollama supports logprobs but not top_logprobs.
+		req["logprobs"] = true
+		// vLLM / SGLang support top_logprobs; ollama does not. Only inject when we
+		// can reasonably infer a non-ollama backend and the client did not set it.
+		if _, hasTop := req["top_logprobs"]; !hasTop && backendSupportsTopLogprobs(backendURL) {
+			req["top_logprobs"] = 20
 		}
 	}
-	// Request logprobs from backend to support RL training.
-	// Note: ollama supports logprobs but not top_logprobs.
-	req["logprobs"] = true
-	// vLLM / SGLang support top_logprobs; ollama does not. Only inject when we
-	// can reasonably infer a non-ollama backend and the client did not set it.
-	if _, hasTop := req["top_logprobs"]; !hasTop && backendSupportsTopLogprobs(backendURL) {
-		req["top_logprobs"] = 20
+	// Ask known backends for engine-native token IDs so trajectories can skip
+	// re-tokenization. SGLang already returns token IDs in meta_info because
+	// logprobs are requested above; vLLM needs an explicit opt-in.
+	if backendType == "vllm" {
+		if _, has := req["return_tokens_as_token_ids"]; !has {
+			req["return_tokens_as_token_ids"] = true
+		}
 	}
 	return json.Marshal(req)
 }
@@ -532,7 +599,7 @@ func extractBearerToken(r *http.Request) string {
 }
 
 // recordStep writes a trajectory step for the captured interaction.
-func (p *Proxy) recordStep(rs *RolloutState, reqBody, respBody []byte, promptTokens, completionTokens int, logprobs []byte) {
+func (p *Proxy) recordStep(rs *RolloutState, reqBody, respBody []byte, promptTokens, completionTokens int, logprobs []byte, promptTokenIDs, completionTokenIDs []int32, weightVersion string) {
 	step := &trajectory.Step{
 		RolloutID: rs.RolloutID,
 		StepID:    0, // Will be assigned by writer or server.
@@ -548,7 +615,10 @@ func (p *Proxy) recordStep(rs *RolloutState, reqBody, respBody []byte, promptTok
 				PromptTokens:     promptTokens,
 				CompletionTokens: completionTokens,
 			},
-			Logprobs: logprobs,
+			Logprobs:           logprobs,
+			PromptTokenIDs:     promptTokenIDs,
+			CompletionTokenIDs: completionTokenIDs,
+			WeightVersion:      weightVersion,
 		},
 		Metadata: map[string]string{
 			"trace_id": rs.TraceID,
@@ -557,6 +627,96 @@ func (p *Proxy) recordStep(rs *RolloutState, reqBody, respBody []byte, promptTok
 	if err := p.writer.Write(context.TODO(), step); err != nil {
 		p.logger.Error("failed to write trajectory", zap.Error(err))
 	}
+}
+
+// extractEngineTokenIDs pulls engine-native token IDs and the served weight
+// version out of a backend response (or stream chunk). Supported shapes:
+// SGLang top-level or meta_info fields (prompt_token_ids /
+// completion_token_ids / output_token_logprobs) and vLLM-style
+// choices[].token_ids. Empty results mean the backend did not expose IDs and
+// consumers must fall back to re-tokenization.
+func extractEngineTokenIDs(respMap map[string]any) (promptIDs, completionIDs []int32, weightVersion string) {
+	toNumber := func(v any) (int32, bool) {
+		switch n := v.(type) {
+		case float64:
+			return int32(n), true
+		case int:
+			return int32(n), true
+		case int32:
+			return n, true
+		case int64:
+			return int32(n), true
+		}
+		return 0, false
+	}
+	toIDs := func(v any) []int32 {
+		arr, ok := v.([]any)
+		if !ok || len(arr) == 0 {
+			return nil
+		}
+		ids := make([]int32, 0, len(arr))
+		for _, e := range arr {
+			n, ok := toNumber(e)
+			if !ok {
+				return nil
+			}
+			ids = append(ids, n)
+		}
+		return ids
+	}
+	scan := func(m map[string]any) {
+		if len(promptIDs) == 0 {
+			promptIDs = toIDs(m["prompt_token_ids"])
+		}
+		if len(completionIDs) == 0 {
+			for _, k := range []string{"completion_token_ids", "output_token_ids"} {
+				if ids := toIDs(m[k]); len(ids) > 0 {
+					completionIDs = ids
+					break
+				}
+			}
+		}
+		// SGLang output_token_logprobs entries are [logprob, token_id, text].
+		if len(completionIDs) == 0 {
+			if lps, ok := m["output_token_logprobs"].([]any); ok && len(lps) > 0 {
+				ids := make([]int32, 0, len(lps))
+				for _, e := range lps {
+					entry, ok := e.([]any)
+					if !ok || len(entry) < 2 {
+						ids = nil
+						break
+					}
+					n, ok := toNumber(entry[1])
+					if !ok {
+						ids = nil
+						break
+					}
+					ids = append(ids, n)
+				}
+				completionIDs = ids
+			}
+		}
+		if weightVersion == "" {
+			if wv, ok := m["weight_version"].(string); ok {
+				weightVersion = wv
+			}
+		}
+	}
+	scan(respMap)
+	if mi, ok := respMap["meta_info"].(map[string]any); ok {
+		scan(mi)
+	}
+	if choices, ok := respMap["choices"].([]any); ok && len(choices) > 0 {
+		if choice, ok := choices[0].(map[string]any); ok {
+			if len(completionIDs) == 0 {
+				completionIDs = toIDs(choice["token_ids"])
+			}
+			if mi, ok := choice["meta_info"].(map[string]any); ok {
+				scan(mi)
+			}
+		}
+	}
+	return promptIDs, completionIDs, weightVersion
 }
 
 // StepCounter generates monotonic step IDs per rollout.

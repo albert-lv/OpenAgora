@@ -310,7 +310,7 @@ func TestInjectSampling(t *testing.T) {
 	}
 	body := []byte(`{"model":"gpt-4","messages":[]}`)
 	vllmURL, _ := url.Parse("http://vllm:8000/v1")
-	out, err := injectSampling(body, sampling, vllmURL)
+	out, err := injectSampling(body, sampling, vllmURL, "")
 	if err != nil {
 		t.Fatalf("inject sampling: %v", err)
 	}
@@ -336,7 +336,7 @@ func TestInjectSampling(t *testing.T) {
 
 	// ollama backend must NOT receive top_logprobs.
 	ollamaURL, _ := url.Parse("http://localhost:11434/v1")
-	out, err = injectSampling(body, sampling, ollamaURL)
+	out, err = injectSampling(body, sampling, ollamaURL, "")
 	if err != nil {
 		t.Fatalf("inject sampling ollama: %v", err)
 	}
@@ -434,5 +434,35 @@ func BenchmarkProxyNonStreaming(b *testing.B) {
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		proxy.ServeHTTP(rec, req)
+	}
+}
+
+func TestNewProxyHTTPTimeout(t *testing.T) {
+	mw := &mockWriter{}
+	logger := zap.NewNop()
+
+	p, err := NewProxy("", mw, logger)
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+	if p.client.Timeout != DefaultHTTPTimeout {
+		t.Fatalf("expected default timeout %v, got %v", DefaultHTTPTimeout, p.client.Timeout)
+	}
+
+	p, err = NewProxy("", mw, logger, WithHTTPTimeout(5*time.Minute))
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+	if p.client.Timeout != 5*time.Minute {
+		t.Fatalf("expected 5m timeout, got %v", p.client.Timeout)
+	}
+
+	// Non-positive values keep the default.
+	p, err = NewProxy("", mw, logger, WithHTTPTimeout(0))
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+	if p.client.Timeout != DefaultHTTPTimeout {
+		t.Fatalf("expected default timeout %v, got %v", DefaultHTTPTimeout, p.client.Timeout)
 	}
 }

@@ -6,7 +6,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from openagora_verl.utils import extract_logprobs, extract_response_text
+from openagora_verl.utils import (
+    extract_logprobs,
+    extract_native_token_ids,
+    extract_response_text,
+    extract_weight_versions,
+)
 
 
 class FakeTokenizer:
@@ -90,3 +95,56 @@ class TestLogprobTextAlignment:
 
         assert logprobs is not None
         assert len(logprobs) == token_count
+
+
+class TestExtractNativeTokenIds:
+    def test_concatenates_per_step_ids(self):
+        trajectory = [
+            {
+                "response": {
+                    "prompt_token_ids": [1, 2, 3],
+                    "completion_token_ids": [10, 11],
+                }
+            },
+            {
+                "response": {
+                    "prompt_token_ids": [1, 2, 3, 10, 11, 4],
+                    "completion_token_ids": [12],
+                }
+            },
+        ]
+        result = extract_native_token_ids(trajectory)
+        assert result == {
+            "prompt_token_ids": [1, 2, 3, 1, 2, 3, 10, 11, 4],
+            "completion_token_ids": [10, 11, 12],
+        }
+
+    def test_missing_completion_ids_returns_none(self):
+        trajectory = [
+            {"response": {"choices_json": b'[{"message": {"content": "x"}}]'}}
+        ]
+        assert extract_native_token_ids(trajectory) is None
+
+    def test_empty_trajectory_returns_none(self):
+        assert extract_native_token_ids([]) is None
+
+    def test_missing_prompt_ids_still_returns_completions(self):
+        trajectory = [{"response": {"completion_token_ids": [5, 6]}}]
+        result = extract_native_token_ids(trajectory)
+        assert result == {"prompt_token_ids": [], "completion_token_ids": [5, 6]}
+
+
+class TestExtractWeightVersions:
+    def test_collects_versions_in_order(self):
+        trajectory = [
+            {"response": {"weight_version": "v1"}},
+            {"response": {"weight_version": "v2"}},
+            {"response": {}},
+        ]
+        assert extract_weight_versions(trajectory) == ["v1", "v2"]
+
+    def test_empty_when_absent(self):
+        trajectory = [
+            {"response": {"choices_json": b'[{"message": {"content": "x"}}]'}}
+        ]
+        assert extract_weight_versions(trajectory) == []

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/albert-lv/OpenAgora/go/pkg/sandbox"
@@ -140,6 +141,29 @@ func (p *Provider) Stop(ctx context.Context, id string) error {
 	p.mu.Unlock()
 	if cmd != nil && cmd.Process != nil {
 		_ = cmd.Process.Kill()
+	}
+	return nil
+}
+
+// Pause suspends the local agent process with SIGSTOP.
+func (p *Provider) Pause(ctx context.Context, id string) error {
+	return p.signal(id, syscall.SIGSTOP)
+}
+
+// Unpause resumes the local agent process with SIGCONT.
+func (p *Provider) Unpause(ctx context.Context, id string) error {
+	return p.signal(id, syscall.SIGCONT)
+}
+
+func (p *Provider) signal(id string, sig syscall.Signal) error {
+	p.mu.Lock()
+	cmd := p.procs[id]
+	p.mu.Unlock()
+	if cmd == nil || cmd.Process == nil {
+		return fmt.Errorf("local sandbox process not found: %s", id)
+	}
+	if err := cmd.Process.Signal(sig); err != nil {
+		return fmt.Errorf("signal %v to local sandbox %s: %w", sig, id, err)
 	}
 	return nil
 }

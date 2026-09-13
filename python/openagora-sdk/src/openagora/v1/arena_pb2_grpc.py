@@ -65,6 +65,21 @@ class ArenaServiceStub:
                 request_serializer=openagora_dot_v1_dot_arena__pb2.GetTrajectoryRequest.SerializeToString,
                 response_deserializer=openagora_dot_v1_dot_arena__pb2.Trajectory.FromString,
                 _registered_method=True)
+        self.PauseRollout = channel.unary_unary(
+                '/openagora.v1.ArenaService/PauseRollout',
+                request_serializer=openagora_dot_v1_dot_arena__pb2.PauseRolloutRequest.SerializeToString,
+                response_deserializer=openagora_dot_v1_dot_arena__pb2.PauseRolloutResponse.FromString,
+                _registered_method=True)
+        self.ResumeRollout = channel.unary_unary(
+                '/openagora.v1.ArenaService/ResumeRollout',
+                request_serializer=openagora_dot_v1_dot_arena__pb2.ResumeRolloutRequest.SerializeToString,
+                response_deserializer=openagora_dot_v1_dot_arena__pb2.ResumeRolloutResponse.FromString,
+                _registered_method=True)
+        self.UpdateWeights = channel.unary_unary(
+                '/openagora.v1.ArenaService/UpdateWeights',
+                request_serializer=openagora_dot_v1_dot_arena__pb2.UpdateWeightsRequest.SerializeToString,
+                response_deserializer=openagora_dot_v1_dot_arena__pb2.UpdateWeightsResponse.FromString,
+                _registered_method=True)
 
 
 class ArenaServiceServicer:
@@ -106,6 +121,24 @@ class ArenaServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def PauseRollout(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ResumeRollout(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def UpdateWeights(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ArenaServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -138,6 +171,21 @@ def add_ArenaServiceServicer_to_server(servicer, server):
                     servicer.GetTrajectory,
                     request_deserializer=openagora_dot_v1_dot_arena__pb2.GetTrajectoryRequest.FromString,
                     response_serializer=openagora_dot_v1_dot_arena__pb2.Trajectory.SerializeToString,
+            ),
+            'PauseRollout': grpc.unary_unary_rpc_method_handler(
+                    servicer.PauseRollout,
+                    request_deserializer=openagora_dot_v1_dot_arena__pb2.PauseRolloutRequest.FromString,
+                    response_serializer=openagora_dot_v1_dot_arena__pb2.PauseRolloutResponse.SerializeToString,
+            ),
+            'ResumeRollout': grpc.unary_unary_rpc_method_handler(
+                    servicer.ResumeRollout,
+                    request_deserializer=openagora_dot_v1_dot_arena__pb2.ResumeRolloutRequest.FromString,
+                    response_serializer=openagora_dot_v1_dot_arena__pb2.ResumeRolloutResponse.SerializeToString,
+            ),
+            'UpdateWeights': grpc.unary_unary_rpc_method_handler(
+                    servicer.UpdateWeights,
+                    request_deserializer=openagora_dot_v1_dot_arena__pb2.UpdateWeightsRequest.FromString,
+                    response_serializer=openagora_dot_v1_dot_arena__pb2.UpdateWeightsResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -302,6 +350,87 @@ class ArenaService:
             '/openagora.v1.ArenaService/GetTrajectory',
             openagora_dot_v1_dot_arena__pb2.GetTrajectoryRequest.SerializeToString,
             openagora_dot_v1_dot_arena__pb2.Trajectory.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def PauseRollout(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/openagora.v1.ArenaService/PauseRollout',
+            openagora_dot_v1_dot_arena__pb2.PauseRolloutRequest.SerializeToString,
+            openagora_dot_v1_dot_arena__pb2.PauseRolloutResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ResumeRollout(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/openagora.v1.ArenaService/ResumeRollout',
+            openagora_dot_v1_dot_arena__pb2.ResumeRolloutRequest.SerializeToString,
+            openagora_dot_v1_dot_arena__pb2.ResumeRolloutResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def UpdateWeights(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/openagora.v1.ArenaService/UpdateWeights',
+            openagora_dot_v1_dot_arena__pb2.UpdateWeightsRequest.SerializeToString,
+            openagora_dot_v1_dot_arena__pb2.UpdateWeightsResponse.FromString,
             options,
             channel_credentials,
             insecure,

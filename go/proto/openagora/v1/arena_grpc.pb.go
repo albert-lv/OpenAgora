@@ -25,6 +25,9 @@ const (
 	ArenaService_ListRollouts_FullMethodName     = "/openagora.v1.ArenaService/ListRollouts"
 	ArenaService_StreamTrajectory_FullMethodName = "/openagora.v1.ArenaService/StreamTrajectory"
 	ArenaService_GetTrajectory_FullMethodName    = "/openagora.v1.ArenaService/GetTrajectory"
+	ArenaService_PauseRollout_FullMethodName     = "/openagora.v1.ArenaService/PauseRollout"
+	ArenaService_ResumeRollout_FullMethodName    = "/openagora.v1.ArenaService/ResumeRollout"
+	ArenaService_UpdateWeights_FullMethodName    = "/openagora.v1.ArenaService/UpdateWeights"
 )
 
 // ArenaServiceClient is the client API for ArenaService service.
@@ -37,6 +40,9 @@ type ArenaServiceClient interface {
 	ListRollouts(ctx context.Context, in *ListRolloutsRequest, opts ...grpc.CallOption) (*ListRolloutsResponse, error)
 	StreamTrajectory(ctx context.Context, in *StreamTrajectoryRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TrajectoryStep], error)
 	GetTrajectory(ctx context.Context, in *GetTrajectoryRequest, opts ...grpc.CallOption) (*Trajectory, error)
+	PauseRollout(ctx context.Context, in *PauseRolloutRequest, opts ...grpc.CallOption) (*PauseRolloutResponse, error)
+	ResumeRollout(ctx context.Context, in *ResumeRolloutRequest, opts ...grpc.CallOption) (*ResumeRolloutResponse, error)
+	UpdateWeights(ctx context.Context, in *UpdateWeightsRequest, opts ...grpc.CallOption) (*UpdateWeightsResponse, error)
 }
 
 type arenaServiceClient struct {
@@ -116,6 +122,36 @@ func (c *arenaServiceClient) GetTrajectory(ctx context.Context, in *GetTrajector
 	return out, nil
 }
 
+func (c *arenaServiceClient) PauseRollout(ctx context.Context, in *PauseRolloutRequest, opts ...grpc.CallOption) (*PauseRolloutResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PauseRolloutResponse)
+	err := c.cc.Invoke(ctx, ArenaService_PauseRollout_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *arenaServiceClient) ResumeRollout(ctx context.Context, in *ResumeRolloutRequest, opts ...grpc.CallOption) (*ResumeRolloutResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResumeRolloutResponse)
+	err := c.cc.Invoke(ctx, ArenaService_ResumeRollout_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *arenaServiceClient) UpdateWeights(ctx context.Context, in *UpdateWeightsRequest, opts ...grpc.CallOption) (*UpdateWeightsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateWeightsResponse)
+	err := c.cc.Invoke(ctx, ArenaService_UpdateWeights_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ArenaServiceServer is the server API for ArenaService service.
 // All implementations must embed UnimplementedArenaServiceServer
 // for forward compatibility.
@@ -126,6 +162,9 @@ type ArenaServiceServer interface {
 	ListRollouts(context.Context, *ListRolloutsRequest) (*ListRolloutsResponse, error)
 	StreamTrajectory(*StreamTrajectoryRequest, grpc.ServerStreamingServer[TrajectoryStep]) error
 	GetTrajectory(context.Context, *GetTrajectoryRequest) (*Trajectory, error)
+	PauseRollout(context.Context, *PauseRolloutRequest) (*PauseRolloutResponse, error)
+	ResumeRollout(context.Context, *ResumeRolloutRequest) (*ResumeRolloutResponse, error)
+	UpdateWeights(context.Context, *UpdateWeightsRequest) (*UpdateWeightsResponse, error)
 	mustEmbedUnimplementedArenaServiceServer()
 }
 
@@ -153,6 +192,15 @@ func (UnimplementedArenaServiceServer) StreamTrajectory(*StreamTrajectoryRequest
 }
 func (UnimplementedArenaServiceServer) GetTrajectory(context.Context, *GetTrajectoryRequest) (*Trajectory, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetTrajectory not implemented")
+}
+func (UnimplementedArenaServiceServer) PauseRollout(context.Context, *PauseRolloutRequest) (*PauseRolloutResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PauseRollout not implemented")
+}
+func (UnimplementedArenaServiceServer) ResumeRollout(context.Context, *ResumeRolloutRequest) (*ResumeRolloutResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResumeRollout not implemented")
+}
+func (UnimplementedArenaServiceServer) UpdateWeights(context.Context, *UpdateWeightsRequest) (*UpdateWeightsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateWeights not implemented")
 }
 func (UnimplementedArenaServiceServer) mustEmbedUnimplementedArenaServiceServer() {}
 func (UnimplementedArenaServiceServer) testEmbeddedByValue()                      {}
@@ -276,6 +324,60 @@ func _ArenaService_GetTrajectory_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ArenaService_PauseRollout_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PauseRolloutRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ArenaServiceServer).PauseRollout(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ArenaService_PauseRollout_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ArenaServiceServer).PauseRollout(ctx, req.(*PauseRolloutRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ArenaService_ResumeRollout_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResumeRolloutRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ArenaServiceServer).ResumeRollout(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ArenaService_ResumeRollout_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ArenaServiceServer).ResumeRollout(ctx, req.(*ResumeRolloutRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ArenaService_UpdateWeights_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateWeightsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ArenaServiceServer).UpdateWeights(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ArenaService_UpdateWeights_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ArenaServiceServer).UpdateWeights(ctx, req.(*UpdateWeightsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ArenaService_ServiceDesc is the grpc.ServiceDesc for ArenaService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -302,6 +404,18 @@ var ArenaService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetTrajectory",
 			Handler:    _ArenaService_GetTrajectory_Handler,
+		},
+		{
+			MethodName: "PauseRollout",
+			Handler:    _ArenaService_PauseRollout_Handler,
+		},
+		{
+			MethodName: "ResumeRollout",
+			Handler:    _ArenaService_ResumeRollout_Handler,
+		},
+		{
+			MethodName: "UpdateWeights",
+			Handler:    _ArenaService_UpdateWeights_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

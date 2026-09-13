@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/albert-lv/OpenAgora/go/pkg/inference"
 	"github.com/albert-lv/OpenAgora/go/pkg/proxy"
 	"github.com/albert-lv/OpenAgora/go/pkg/sandbox"
 	"github.com/albert-lv/OpenAgora/go/pkg/trajectory"
@@ -20,6 +21,8 @@ import (
 	arena_pb "github.com/albert-lv/OpenAgora/go/proto/openagora/v1"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -28,15 +31,21 @@ type Rollout struct {
 	ID                 string
 	TraceID            string
 	TaskID             string
-	Status             string // pending, running, success, failed, stopped
+	Status             string // pending, running, paused, success, failed, stopped
 	SandboxID          string
 	Token              string
 	ProxyAddr          string
+	ProxyURL           string // URL handed to the trainer; returned again by ResumeRollout
+	WeightVersion      string // weight version this rollout's generation is attributed to
 	Reward             float64
 	VerificationReport *verify.VerificationReport
 	Timeout            time.Duration // max time the sandbox may run
 	CreatedAt          time.Time
 	FinishedAt         *time.Time
+	// Pause accounting: the timeout clock is suspended while paused.
+	PausedAt    time.Time
+	PausedTotal time.Duration
+	stateCh     chan struct{} // signalled (non-blocking) on pause/resume
 }
 
 // ArenaServer implements the ArenaService gRPC server.
@@ -48,10 +57,15 @@ type ArenaServer struct {
 	proxy              *proxy.Proxy
 	proxyAdvertiseHost string
 	verifyRunner       VerifyRunner
+	syncVerify         bool
 	trajBackend        backend.Backend
 	trajWriter         trajectory.Writer
 	trajDir            string
 	metrics            *Metrics
+	weightSyncer       inference.WeightSyncer
+
+	weightMu             sync.Mutex // serializes UpdateWeights calls
+	currentWeightVersion string
 
 	mu       sync.RWMutex
 	rollouts map[string]*Rollout // key = rolloutID
@@ -67,12 +81,26 @@ type VerifyRunner interface {
 type ServerConfig struct {
 	SandboxProvider    sandbox.Provider
 	Proxy              *proxy.Proxy
-	ProxyAdvertiseHost string // optional host advertised to sandboxes instead of the proxy listener address (e.g. "host.docker.internal")
+	ProxyAdvertiseHost string        // optional host advertised to sandboxes instead of the proxy listener address (e.g. "host.docker.internal")
+	ProxyTimeout       time.Duration // timeout for proxied LLM backend calls; falls back to ARENA_PROXY_TIMEOUT, then proxy.DefaultHTTPTimeout
 	VerifyRunner       VerifyRunner
-	TrajBackend        backend.Backend
-	TrajWriter         trajectory.Writer
-	TrajDir            string
-	Metrics            *Metrics
+	// SyncVerify restores the legacy behavior of running verification inline
+	// before the rollout is marked complete. By default verification runs
+	// asynchronously: the rollout reaches its terminal status as soon as
+	// generation finishes and the reward/report are filled in afterwards.
+	SyncVerify  bool
+	TrajBackend backend.Backend
+	TrajWriter  trajectory.Writer
+	TrajDir     string
+	Metrics     *Metrics
+	// BackendType identifies the shared LLM inference backend ("sglang" or
+	// "vllm"); BackendURL points at it. Both fall back to the
+	// ARENA_BACKEND_TYPE / ARENA_BACKEND_URL env vars. Together they enable
+	// weight synchronization (UpdateWeights) and backend-specific proxy
+	// capture. WeightSyncer overrides the syncer built from these settings.
+	BackendType  string
+	BackendURL   string
+	WeightSyncer inference.WeightSyncer
 }
 
 // New creates a new ArenaServer instance.
@@ -115,7 +143,7 @@ func New(logger *zap.Logger, cfg *ServerConfig) *ArenaServer {
 	} else {
 		// Create a shared proxy instance; rollouts will register with per-rollout backends.
 		var err error
-		p, err = proxy.NewProxy("", trajWriter, logger)
+		p, err = proxy.NewProxy("", trajWriter, logger, proxy.WithHTTPTimeout(resolveProxyTimeout(logger, cfg.ProxyTimeout)))
 		if err != nil {
 			logger.Fatal("failed to create proxy", zap.Error(err))
 		}
@@ -123,18 +151,60 @@ func New(logger *zap.Logger, cfg *ServerConfig) *ArenaServer {
 
 	p.SetMetrics(metrics)
 
+	// Resolve the weight syncer: explicit override, then BackendType/BackendURL
+	// with env fallbacks (ARENA_BACKEND_TYPE / ARENA_BACKEND_URL).
+	weightSyncer := cfg.WeightSyncer
+	backendType := cfg.BackendType
+	if backendType == "" {
+		backendType = os.Getenv("ARENA_BACKEND_TYPE")
+	}
+	backendURL := cfg.BackendURL
+	if backendURL == "" {
+		backendURL = os.Getenv("ARENA_BACKEND_URL")
+	}
+	if weightSyncer == nil && backendType != "" {
+		ws, err := inference.NewWeightSyncer(backendType, backendURL)
+		if err != nil {
+			logger.Warn("weight sync disabled", zap.Error(err))
+		} else {
+			weightSyncer = ws
+		}
+	}
+	p.SetBackendType(backendType)
+
 	return &ArenaServer{
 		logger:             logger,
 		sandboxProvider:    sbProvider,
 		proxy:              p,
 		proxyAdvertiseHost: cfg.ProxyAdvertiseHost,
 		verifyRunner:       cfg.VerifyRunner,
+		syncVerify:         cfg.SyncVerify,
 		trajBackend:        trajBackend,
 		trajWriter:         trajWriter,
 		trajDir:            trajDir,
 		metrics:            metrics,
+		weightSyncer:       weightSyncer,
 		rollouts:           make(map[string]*Rollout),
 	}
+}
+
+// resolveProxyTimeout returns the configured proxy timeout, falling back to
+// the ARENA_PROXY_TIMEOUT env var (e.g. "5m"). Returns 0 when unset, in which
+// case the proxy default applies.
+func resolveProxyTimeout(logger *zap.Logger, configured time.Duration) time.Duration {
+	if configured > 0 {
+		return configured
+	}
+	v := os.Getenv("ARENA_PROXY_TIMEOUT")
+	if v == "" {
+		return 0
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		logger.Warn("ignoring invalid ARENA_PROXY_TIMEOUT", zap.String("value", v))
+		return 0
+	}
+	return d
 }
 
 // CreateRollout starts a new rollout.
@@ -230,6 +300,7 @@ func (s *ArenaServer) CreateRollout(ctx context.Context, req *arena_pb.CreateRol
 	if timeout <= 0 {
 		timeout = 10 * time.Minute
 	}
+	proxyURL := fmt.Sprintf("http://%s/v1", net.JoinHostPort(s.proxyAdvertiseHost, proxyPort))
 	rollout := &Rollout{
 		ID:        rolloutID,
 		TraceID:   traceID,
@@ -238,117 +309,227 @@ func (s *ArenaServer) CreateRollout(ctx context.Context, req *arena_pb.CreateRol
 		SandboxID: sb.ID,
 		Token:     token,
 		ProxyAddr: proxyAddr,
+		ProxyURL:  proxyURL,
 		Timeout:   timeout,
 		CreatedAt: time.Now(),
+		stateCh:   make(chan struct{}, 1),
 	}
 	s.mu.Lock()
+	rollout.WeightVersion = s.currentWeightVersion
 	s.rollouts[rolloutID] = rollout
 	s.mu.Unlock()
 
 	// 7. Background goroutine: wait for completion, verify, update state.
 	go s.runLifecycle(rollout, sb, token, ps, req.Verify)
 
-	proxyURL := fmt.Sprintf("http://%s/v1", net.JoinHostPort(s.proxyAdvertiseHost, proxyPort))
 	return &arena_pb.CreateRolloutResponse{RolloutId: rolloutID, ProxyUrl: proxyURL, Token: token}, nil
 }
 
-// runLifecycle waits for the sandbox to finish, runs verification, and updates state.
+// runLifecycle waits for the sandbox to finish, then completes the rollout.
+// Generation completion (terminal status + flushed trajectory) is not gated on
+// verification unless SyncVerify is configured; by default verification runs
+// asynchronously against the still-running sandbox and its results are filled
+// into the rollout record when done.
 func (s *ArenaServer) runLifecycle(rollout *Rollout, sb *sandbox.Sandbox, token string, ps *proxy.ProxyServer, verifyCfg *arena_pb.VerifyConfig) {
 	start := time.Now()
-	// Enforce the rollout timeout. If the sandbox does not finish in time,
-	// we stop it and mark the rollout as failed.
-	ctx, cancel := context.WithTimeout(context.Background(), rollout.Timeout)
-	defer cancel()
+	// The lifecycle context is cancelled only on timeout or return; paused
+	// time does not count against the rollout timeout.
+	ctx, cancel := context.WithCancel(context.Background())
 	defer func() {
 		s.metrics.Add("arena_rollouts_active", -1)
-		s.metrics.Observe("arena_rollout_duration_seconds", since(start))
 	}()
 
-	// Wait for sandbox completion.
-	err := s.sandboxProvider.WaitForDone(ctx, sb.ID)
-	timedOut := false
+	waitErrCh := make(chan error, 1)
+	go func() {
+		waitErrCh <- s.sandboxProvider.WaitForDone(ctx, sb.ID)
+	}()
+
+	// Wait for sandbox completion, enforcing the rollout timeout.
+	err, timedOut := s.waitForCompletion(ctx, cancel, rollout, start, waitErrCh)
 	if err != nil {
 		s.logger.Warn("WaitForDone error", zap.String("rollout_id", rollout.ID), zap.Error(err))
-		if ctx.Err() == context.DeadlineExceeded {
-			timedOut = true
+	}
+
+	// Generation is complete: stop accepting LLM traffic for this rollout and
+	// flush the trajectory so GetTrajectory observes all steps immediately.
+	s.proxy.UnregisterRollout(token)
+	_ = ps.Close()
+	if f, ok := s.trajBackend.(backend.Finalizer); ok {
+		if ferr := f.Finalize(context.Background(), rollout.ID); ferr != nil {
+			s.logger.Warn("trajectory finalize failed", zap.String("rollout_id", rollout.ID), zap.Error(ferr))
 		}
 	}
 
-	// Run verification BEFORE stopping the sandbox so docker exec can still work.
-	var report *verify.VerificationReport
-	if verifyCfg != nil && s.verifyRunner != nil {
-		verifyStart := time.Now()
-		spec := verify.FromProto(verifyCfg)
-		var verr error
-		report, verr = s.verifyRunner.Run(ctx, s.sandboxProvider, spec, sb.ID)
-		verifyResult := "success"
-		if verr != nil {
-			verifyResult = "error"
-			s.logger.Warn("verification failed",
-				zap.String("rollout_id", rollout.ID),
-				zap.Error(verr))
-		}
-		if report != nil {
-			if report.TotalReward == 0 && len(report.Rewards) > 0 {
-				report.TotalReward = verify.TotalReward(report.Rewards)
+	if s.syncVerify {
+		defer cancel()
+		report := s.runVerify(ctx, rollout, sb, verifyCfg)
+		s.stopSandbox(sb)
+		s.applyVerification(rollout, report)
+		s.markTerminal(rollout, start, timedOut, err)
+		return
+	}
+
+	// Async verification: mark the rollout terminal now so the trainer can
+	// consume it; verify results are attached when verification finishes.
+	s.markTerminal(rollout, start, timedOut, err)
+	if verifyCfg == nil || s.verifyRunner == nil {
+		defer cancel()
+		s.stopSandbox(sb)
+		s.applyVerification(rollout, nil)
+		return
+	}
+	go func() {
+		defer cancel()
+		report := s.runVerify(ctx, rollout, sb, verifyCfg)
+		s.stopSandbox(sb)
+		s.applyVerification(rollout, report)
+	}()
+}
+
+// waitForCompletion blocks until the sandbox finishes or the rollout timeout
+// expires. The timeout clock is suspended while the rollout is paused: a
+// frozen sandbox neither exits nor writes its done marker, so WaitForDone
+// (docker wait / done-file stat) simply blocks during the freeze, which is
+// fine — only the deadline accounting needs to exclude paused time.
+// Returns the WaitForDone error and whether the wait ended on timeout.
+func (s *ArenaServer) waitForCompletion(ctx context.Context, cancel context.CancelFunc, rollout *Rollout, start time.Time, waitErrCh <-chan error) (error, bool) {
+	for {
+		s.mu.RLock()
+		status := rollout.Status
+		pausedTotal := rollout.PausedTotal
+		stateCh := rollout.stateCh
+		s.mu.RUnlock()
+
+		if status == "paused" {
+			// Timeout suspended; wait for resume (stateCh) or completion.
+			select {
+			case err := <-waitErrCh:
+				return err, false
+			case <-stateCh:
+				continue
 			}
 		}
-		s.metrics.Observe("arena_verify_duration_seconds", since(verifyStart))
-		s.metrics.Inc("arena_verify_total", 1, verifyResult)
+
+		elapsed := time.Since(start) - pausedTotal
+		remaining := rollout.Timeout - elapsed
+		if remaining <= 0 {
+			cancel()
+			return <-waitErrCh, true
+		}
+		timer := time.NewTimer(remaining)
+		select {
+		case err := <-waitErrCh:
+			timer.Stop()
+			return err, false
+		case <-timer.C:
+			cancel()
+			return <-waitErrCh, true
+		case <-stateCh:
+			// Pause/resume changed the accounting; recompute.
+			timer.Stop()
+			continue
+		}
 	}
+}
 
-	// Stop and destroy the sandbox (idempotent).
-	_ = s.sandboxProvider.Stop(ctx, sb.ID)
-	_ = s.sandboxProvider.Destroy(ctx, sb)
+// signalState notifies the lifecycle goroutine of a pause/resume transition.
+func signalState(ch chan struct{}) {
+	select {
+	case ch <- struct{}{}:
+	default:
+	}
+}
 
-	// Update rollout state.
-	now := time.Now()
+// runVerify executes verification against the still-running sandbox.
+// Returns nil when no verification is configured.
+func (s *ArenaServer) runVerify(ctx context.Context, rollout *Rollout, sb *sandbox.Sandbox, verifyCfg *arena_pb.VerifyConfig) *verify.VerificationReport {
+	if verifyCfg == nil || s.verifyRunner == nil {
+		return nil
+	}
+	verifyStart := time.Now()
+	spec := verify.FromProto(verifyCfg)
+	report, verr := s.verifyRunner.Run(ctx, s.sandboxProvider, spec, sb.ID)
+	verifyResult := "success"
+	if verr != nil {
+		verifyResult = "error"
+		s.logger.Warn("verification failed",
+			zap.String("rollout_id", rollout.ID),
+			zap.Error(verr))
+	}
+	if report != nil {
+		if report.TotalReward == 0 && len(report.Rewards) > 0 {
+			report.TotalReward = verify.TotalReward(report.Rewards)
+		}
+	}
+	s.metrics.Observe("arena_verify_duration_seconds", since(verifyStart))
+	s.metrics.Inc("arena_verify_total", 1, verifyResult)
+	return report
+}
+
+// stopSandbox stops and destroys the sandbox (idempotent). Uses a background
+// context so cleanup still runs after the rollout timeout has expired.
+func (s *ArenaServer) stopSandbox(sb *sandbox.Sandbox) {
+	_ = s.sandboxProvider.Stop(context.Background(), sb.ID)
+	_ = s.sandboxProvider.Destroy(context.Background(), sb)
+}
+
+// applyVerification attaches verification results to the rollout record.
+func (s *ArenaServer) applyVerification(rollout *Rollout, report *verify.VerificationReport) {
 	s.mu.Lock()
 	if r, ok := s.rollouts[rollout.ID]; ok {
-		r.FinishedAt = &now
 		r.VerificationReport = report
 		if report != nil {
 			r.Reward = report.TotalReward
 		}
+	}
+	s.mu.Unlock()
+
+	reward := 0.0
+	rewardDims := 0
+	if report != nil {
+		reward = report.TotalReward
+		rewardDims = len(report.Rewards)
+	}
+	s.metrics.Observe("arena_rollout_reward", reward)
+	if report != nil {
+		s.logger.Info("rollout verification finished",
+			zap.String("rollout_id", rollout.ID),
+			zap.Float64("reward", reward),
+			zap.Int("reward_dimensions", rewardDims))
+	}
+}
+
+// markTerminal sets the rollout's final status and records completion metrics.
+func (s *ArenaServer) markTerminal(rollout *Rollout, start time.Time, timedOut bool, waitErr error) {
+	now := time.Now()
+	s.mu.Lock()
+	status := "success"
+	if r, ok := s.rollouts[rollout.ID]; ok {
+		r.FinishedAt = &now
 		switch {
 		case timedOut:
 			r.Status = "failed"
-		case err != nil:
+		case waitErr != nil:
 			r.Status = "failed"
 		default:
 			r.Status = "success"
 		}
+		status = r.Status
 	}
 	s.mu.Unlock()
 
-	status := s.rollouts[rollout.ID].Status
-	reward := 0.0
-	if report != nil {
-		reward = report.TotalReward
-	}
 	s.metrics.Inc("arena_rollouts_total", 1, status)
-	s.metrics.Observe("arena_rollout_reward", reward)
-
-	// Cleanup proxy registration.
-	s.proxy.UnregisterRollout(token)
-	_ = ps.Close()
-
-	rewardDims := 0
-	if report != nil {
-		rewardDims = len(report.Rewards)
-	}
+	s.metrics.Observe("arena_rollout_duration_seconds", since(start))
 	s.logger.Info("rollout finished",
 		zap.String("rollout_id", rollout.ID),
-		zap.String("status", status),
-		zap.Float64("reward", reward),
-		zap.Int("reward_dimensions", rewardDims))
+		zap.String("status", status))
 }
 
 // GetRollout returns the status of a rollout.
 func (s *ArenaServer) GetRollout(ctx context.Context, req *arena_pb.GetRolloutRequest) (*arena_pb.Rollout, error) {
 	s.mu.RLock()
+	defer s.mu.RUnlock()
 	r, ok := s.rollouts[req.RolloutId]
-	s.mu.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("rollout not found: %s", req.RolloutId)
 	}
@@ -370,6 +551,132 @@ func (s *ArenaServer) StopRollout(ctx context.Context, req *arena_pb.StopRollout
 		s.logger.Warn("failed to stop sandbox", zap.String("rollout_id", req.RolloutId), zap.Error(err))
 	}
 	return &arena_pb.StopRolloutResponse{}, nil
+}
+
+// PauseRollout freezes a running rollout's sandbox (partial rollout).
+// The rollout timeout is suspended while paused and the per-rollout proxy
+// listener stays alive, so ResumeRollout needs no re-registration.
+func (s *ArenaServer) PauseRollout(ctx context.Context, req *arena_pb.PauseRolloutRequest) (*arena_pb.PauseRolloutResponse, error) {
+	if req.Mode != "" && req.Mode != "freeze" {
+		return nil, status.Errorf(codes.InvalidArgument, "unknown pause mode %q (supported: \"freeze\")", req.Mode)
+	}
+	pauser, ok := s.sandboxProvider.(sandbox.Pauser)
+	if !ok {
+		return nil, status.Errorf(codes.Unimplemented, "sandbox provider %T does not support pause/resume", s.sandboxProvider)
+	}
+
+	s.mu.Lock()
+	r, ok := s.rollouts[req.RolloutId]
+	if !ok {
+		s.mu.Unlock()
+		return nil, status.Errorf(codes.NotFound, "rollout not found: %s", req.RolloutId)
+	}
+	if r.Status != "running" {
+		s.mu.Unlock()
+		return nil, status.Errorf(codes.FailedPrecondition, "rollout %s is %s; only running rollouts can be paused", req.RolloutId, r.Status)
+	}
+	r.Status = "paused"
+	r.PausedAt = time.Now()
+	s.mu.Unlock()
+	signalState(r.stateCh)
+
+	if err := pauser.Pause(ctx, r.SandboxID); err != nil {
+		// Roll back the transition so the rollout keeps running.
+		s.mu.Lock()
+		r.Status = "running"
+		r.PausedAt = time.Time{}
+		s.mu.Unlock()
+		signalState(r.stateCh)
+		return nil, status.Errorf(codes.Internal, "pause sandbox: %v", err)
+	}
+
+	// Flush buffered trajectory steps so the pause boundary is durable, but
+	// keep the writer open: generation continues after resume.
+	if f, ok := s.trajBackend.(backend.Flusher); ok {
+		if ferr := f.Flush(context.Background(), r.ID); ferr != nil {
+			s.logger.Warn("trajectory flush on pause failed", zap.String("rollout_id", r.ID), zap.Error(ferr))
+		}
+	}
+	s.logger.Info("rollout paused", zap.String("rollout_id", r.ID))
+	return &arena_pb.PauseRolloutResponse{}, nil
+}
+
+// ResumeRollout unfreezes a paused rollout and restores its timeout
+// accounting. The proxy listener was kept alive during the pause, so the
+// returned proxy URL and token are unchanged.
+func (s *ArenaServer) ResumeRollout(ctx context.Context, req *arena_pb.ResumeRolloutRequest) (*arena_pb.ResumeRolloutResponse, error) {
+	pauser, ok := s.sandboxProvider.(sandbox.Pauser)
+	if !ok {
+		return nil, status.Errorf(codes.Unimplemented, "sandbox provider %T does not support pause/resume", s.sandboxProvider)
+	}
+
+	s.mu.RLock()
+	r, ok := s.rollouts[req.RolloutId]
+	s.mu.RUnlock()
+	if !ok {
+		return nil, status.Errorf(codes.NotFound, "rollout not found: %s", req.RolloutId)
+	}
+
+	s.mu.Lock()
+	if r.Status != "paused" {
+		s.mu.Unlock()
+		return nil, status.Errorf(codes.FailedPrecondition, "rollout %s is %s; only paused rollouts can be resumed", req.RolloutId, r.Status)
+	}
+	s.mu.Unlock()
+
+	if err := pauser.Unpause(ctx, r.SandboxID); err != nil {
+		return nil, status.Errorf(codes.Internal, "unpause sandbox: %v", err)
+	}
+
+	s.mu.Lock()
+	r.PausedTotal += time.Since(r.PausedAt)
+	r.PausedAt = time.Time{}
+	r.Status = "running"
+	s.mu.Unlock()
+	signalState(r.stateCh)
+
+	s.logger.Info("rollout resumed", zap.String("rollout_id", r.ID))
+	return &arena_pb.ResumeRolloutResponse{ProxyUrl: r.ProxyURL, Token: r.Token}, nil
+}
+
+// UpdateWeights refits the shared inference backend with newly trained
+// weights: generation is paused, the backend reloads from the trainer's
+// checkpoint directory, and generation continues. Concurrent calls are
+// serialized. On success the version is recorded and stamped onto new
+// rollouts at CreateRollout time.
+func (s *ArenaServer) UpdateWeights(ctx context.Context, req *arena_pb.UpdateWeightsRequest) (*arena_pb.UpdateWeightsResponse, error) {
+	if s.weightSyncer == nil {
+		return nil, status.Error(codes.FailedPrecondition,
+			"no weight syncer configured: set ServerConfig.BackendType/BackendURL or ARENA_BACKEND_TYPE/ARENA_BACKEND_URL")
+	}
+	if req.ModelPath == "" {
+		return nil, status.Error(codes.InvalidArgument, "model_path is required")
+	}
+
+	s.weightMu.Lock()
+	defer s.weightMu.Unlock()
+
+	if err := s.weightSyncer.PauseGeneration(ctx, ""); err != nil {
+		return nil, status.Errorf(codes.Internal, "pause generation: %v", err)
+	}
+	updateErr := s.weightSyncer.UpdateWeightsFromDisk(ctx, req.ModelPath, req.WeightVersion, req.AbortInFlight)
+	// Always resume generation, even after a failed refit, so the backend is
+	// not left paused.
+	if cerr := s.weightSyncer.ContinueGeneration(ctx); cerr != nil {
+		s.logger.Warn("continue generation failed", zap.Error(cerr))
+		if updateErr == nil {
+			updateErr = fmt.Errorf("continue generation: %w", cerr)
+		}
+	}
+	if updateErr != nil {
+		return &arena_pb.UpdateWeightsResponse{Success: false, Message: updateErr.Error()}, nil
+	}
+
+	s.mu.Lock()
+	s.currentWeightVersion = req.WeightVersion
+	s.mu.Unlock()
+	s.logger.Info("weights updated", zap.String("weight_version", req.WeightVersion), zap.String("model_path", req.ModelPath))
+	return &arena_pb.UpdateWeightsResponse{Success: true, WeightVersion: req.WeightVersion}, nil
 }
 
 // ListRollouts lists all rollouts.
@@ -446,6 +753,7 @@ func (s *ArenaServer) toProtoRollout(r *Rollout) *arena_pb.Rollout {
 		CreatedAt:          timestamppb.New(r.CreatedAt),
 		Reward:             float32(r.Reward),
 		VerificationReport: r.VerificationReport.ToProto(),
+		WeightVersion:      r.WeightVersion,
 	}
 	if r.FinishedAt != nil {
 		pb.FinishedAt = timestamppb.New(*r.FinishedAt)
@@ -479,8 +787,11 @@ func (s *ArenaServer) toProtoStep(step *trajectory.Step, stepID int) *arena_pb.T
 	}
 	if step.Response != nil {
 		pb.Response = &arena_pb.LLMResponse{
-			ChoicesJson:  step.Response.Choices,
-			LogprobsJson: step.Response.Logprobs,
+			ChoicesJson:        step.Response.Choices,
+			LogprobsJson:       step.Response.Logprobs,
+			PromptTokenIds:     step.Response.PromptTokenIDs,
+			CompletionTokenIds: step.Response.CompletionTokenIDs,
+			WeightVersion:      step.Response.WeightVersion,
 		}
 		if step.Response.Usage != nil {
 			pb.Response.Usage = &arena_pb.Usage{

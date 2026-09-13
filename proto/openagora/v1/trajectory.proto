@@ -27,6 +27,13 @@ message LLMResponse {
   bytes choices_json = 1;
   Usage usage = 2;
   bytes logprobs_json = 3;
+  // Engine-native token IDs captured from the inference backend when it
+  // returns them (e.g. SGLang meta_info). Empty when the backend does not
+  // expose them; consumers must fall back to re-tokenization.
+  repeated int32 prompt_token_ids = 4;
+  repeated int32 completion_token_ids = 5;
+  // Weight version that generated this response, when the backend reports it.
+  string weight_version = 6;
 }
 
 message Reward {

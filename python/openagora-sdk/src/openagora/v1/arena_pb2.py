@@ -26,7 +26,7 @@ from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__
 from openagora.v1 import trajectory_pb2 as openagora_dot_v1_dot_trajectory__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x18openagora/v1/arena.proto\x12\x0copenagora.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1dopenagora/v1/trajectory.proto\"\xc6\x01\n\x14\x43reateRolloutRequest\x12\x0f\n\x07task_id\x18\x01 \x01(\t\x12,\n\x07sandbox\x18\x02 \x01(\x0b\x32\x1b.openagora.v1.SandboxConfig\x12.\n\x08sampling\x18\x03 \x01(\x0b\x32\x1c.openagora.v1.SamplingConfig\x12*\n\x06verify\x18\x04 \x01(\x0b\x32\x1a.openagora.v1.VerifyConfig\x12\x13\n\x0bllm_backend\x18\x05 \x01(\t\"M\n\x15\x43reateRolloutResponse\x12\x12\n\nrollout_id\x18\x01 \x01(\t\x12\x11\n\tproxy_url\x18\x02 \x01(\t\x12\r\n\x05token\x18\x03 \x01(\t\"\'\n\x11GetRolloutRequest\x12\x12\n\nrollout_id\x18\x01 \x01(\t\"(\n\x12StopRolloutRequest\x12\x12\n\nrollout_id\x18\x01 \x01(\t\"\x15\n\x13StopRolloutResponse\"<\n\x13ListRolloutsRequest\x12\x11\n\tpage_size\x18\x01 \x01(\x05\x12\x12\n\npage_token\x18\x02 \x01(\t\"?\n\x14ListRolloutsResponse\x12\'\n\x08rollouts\x18\x01 \x03(\x0b\x32\x15.openagora.v1.Rollout\"\xee\x01\n\x07Rollout\x12\x12\n\nrollout_id\x18\x01 \x01(\t\x12\x0f\n\x07task_id\x18\x02 \x01(\t\x12\x0e\n\x06status\x18\x03 \x01(\t\x12.\n\ncreated_at\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12/\n\x0b\x66inished_at\x18\x05 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x0e\n\x06reward\x18\x06 \x01(\x02\x12=\n\x13verification_report\x18\x07 \x01(\x0b\x32 .openagora.v1.VerificationReport\"-\n\x17StreamTrajectoryRequest\x12\x12\n\nrollout_id\x18\x01 \x01(\t\"*\n\x14GetTrajectoryRequest\x12\x12\n\nrollout_id\x18\x01 \x01(\t\"9\n\nTrajectory\x12+\n\x05steps\x18\x01 \x03(\x0b\x32\x1c.openagora.v1.TrajectoryStep\"\xe5\x01\n\rSandboxConfig\x12\r\n\x05image\x18\x01 \x01(\t\x12\x0e\n\x06memory\x18\x02 \x01(\t\x12\x0c\n\x04\x63pus\x18\x03 \x01(\x01\x12:\n\x08\x65nv_vars\x18\x04 \x03(\x0b\x32(.openagora.v1.SandboxConfig.EnvVarsEntry\x12\x11\n\ttask_file\x18\x05 \x01(\x0c\x12\x17\n\x0ftimeout_seconds\x18\x06 \x01(\x05\x12\x0f\n\x07\x63ommand\x18\x07 \x03(\t\x1a.\n\x0c\x45nvVarsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"f\n\nRewardSpec\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x0e\n\x06weight\x18\x02 \x01(\x02\x12\x14\n\x0cverifier_dir\x18\x03 \x01(\t\x12\x0f\n\x07\x63ommand\x18\x04 \x01(\t\x12\x13\n\x0b\x61ggregation\x18\x05 \x01(\t\"\xad\x02\n\x0cVerifyConfig\x12\x0f\n\x07\x63ommand\x18\x01 \x01(\t\x12\x12\n\nlog_parser\x18\x02 \x01(\t\x12\x14\n\x0cpass_to_pass\x18\x03 \x03(\t\x12\x14\n\x0c\x66\x61il_to_pass\x18\x04 \x03(\t\x12\x10\n\x08language\x18\x05 \x01(\t\x12\x11\n\tframework\x18\x06 \x01(\t\x12\x17\n\x0finstall_command\x18\x07 \x01(\t\x12\x18\n\x10\x62\x61seline_command\x18\x08 \x01(\t\x12\x15\n\rpatch_command\x18\t \x01(\t\x12\x17\n\x0ftimeout_seconds\x18\n \x01(\x05\x12\x19\n\x11working_directory\x18\x0b \x01(\t\x12)\n\x07rewards\x18\x0c \x03(\x0b\x32\x18.openagora.v1.RewardSpec\"b\n\x0eTestCaseResult\x12\x0f\n\x07test_id\x18\x01 \x01(\t\x12\x17\n\x0f\x62\x61seline_passed\x18\x02 \x01(\x08\x12\x14\n\x0cpatch_passed\x18\x03 \x01(\x08\x12\x10\n\x08\x63\x61tegory\x18\x04 \x01(\t\"\x83\x02\n\x12VerificationReport\x12\x12\n\x06reward\x18\x01 \x01(\x02\x42\x02\x18\x01\x12\x11\n\tf2p_count\x18\x02 \x01(\x05\x12\x11\n\tp2p_count\x18\x03 \x01(\x05\x12\x11\n\tf2f_count\x18\x04 \x01(\x05\x12\x11\n\tp2f_count\x18\x05 \x01(\x05\x12\x30\n\ntest_cases\x18\x06 \x03(\x0b\x32\x1c.openagora.v1.TestCaseResult\x12\x0e\n\x06stdout\x18\x07 \x01(\t\x12\x0e\n\x06stderr\x18\x08 \x01(\t\x12%\n\x07rewards\x18\t \x03(\x0b\x32\x14.openagora.v1.Reward\x12\x14\n\x0ctotal_reward\x18\n \x01(\x02\x32\x83\x04\n\x0c\x41renaService\x12X\n\rCreateRollout\x12\".openagora.v1.CreateRolloutRequest\x1a#.openagora.v1.CreateRolloutResponse\x12\x44\n\nGetRollout\x12\x1f.openagora.v1.GetRolloutRequest\x1a\x15.openagora.v1.Rollout\x12R\n\x0bStopRollout\x12 .openagora.v1.StopRolloutRequest\x1a!.openagora.v1.StopRolloutResponse\x12U\n\x0cListRollouts\x12!.openagora.v1.ListRolloutsRequest\x1a\".openagora.v1.ListRolloutsResponse\x12Y\n\x10StreamTrajectory\x12%.openagora.v1.StreamTrajectoryRequest\x1a\x1c.openagora.v1.TrajectoryStep0\x01\x12M\n\rGetTrajectory\x12\".openagora.v1.GetTrajectoryRequest\x1a\x18.openagora.v1.TrajectoryB6Z4github.com/albert-lv/OpenAgora/go/proto/openagora/v1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x18openagora/v1/arena.proto\x12\x0copenagora.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1dopenagora/v1/trajectory.proto\"\xc6\x01\n\x14\x43reateRolloutRequest\x12\x0f\n\x07task_id\x18\x01 \x01(\t\x12,\n\x07sandbox\x18\x02 \x01(\x0b\x32\x1b.openagora.v1.SandboxConfig\x12.\n\x08sampling\x18\x03 \x01(\x0b\x32\x1c.openagora.v1.SamplingConfig\x12*\n\x06verify\x18\x04 \x01(\x0b\x32\x1a.openagora.v1.VerifyConfig\x12\x13\n\x0bllm_backend\x18\x05 \x01(\t\"M\n\x15\x43reateRolloutResponse\x12\x12\n\nrollout_id\x18\x01 \x01(\t\x12\x11\n\tproxy_url\x18\x02 \x01(\t\x12\r\n\x05token\x18\x03 \x01(\t\"\'\n\x11GetRolloutRequest\x12\x12\n\nrollout_id\x18\x01 \x01(\t\"(\n\x12StopRolloutRequest\x12\x12\n\nrollout_id\x18\x01 \x01(\t\"\x15\n\x13StopRolloutResponse\"7\n\x13PauseRolloutRequest\x12\x12\n\nrollout_id\x18\x01 \x01(\t\x12\x0c\n\x04mode\x18\x02 \x01(\t\"\x16\n\x14PauseRolloutResponse\"*\n\x14ResumeRolloutRequest\x12\x12\n\nrollout_id\x18\x01 \x01(\t\"9\n\x15ResumeRolloutResponse\x12\x11\n\tproxy_url\x18\x01 \x01(\t\x12\r\n\x05token\x18\x02 \x01(\t\"[\n\x14UpdateWeightsRequest\x12\x12\n\nmodel_path\x18\x01 \x01(\t\x12\x16\n\x0eweight_version\x18\x02 \x01(\t\x12\x17\n\x0f\x61\x62ort_in_flight\x18\x03 \x01(\x08\"Q\n\x15UpdateWeightsResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t\x12\x16\n\x0eweight_version\x18\x03 \x01(\t\"<\n\x13ListRolloutsRequest\x12\x11\n\tpage_size\x18\x01 \x01(\x05\x12\x12\n\npage_token\x18\x02 \x01(\t\"?\n\x14ListRolloutsResponse\x12\'\n\x08rollouts\x18\x01 \x03(\x0b\x32\x15.openagora.v1.Rollout\"\x86\x02\n\x07Rollout\x12\x12\n\nrollout_id\x18\x01 \x01(\t\x12\x0f\n\x07task_id\x18\x02 \x01(\t\x12\x0e\n\x06status\x18\x03 \x01(\t\x12.\n\ncreated_at\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12/\n\x0b\x66inished_at\x18\x05 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x0e\n\x06reward\x18\x06 \x01(\x02\x12=\n\x13verification_report\x18\x07 \x01(\x0b\x32 .openagora.v1.VerificationReport\x12\x16\n\x0eweight_version\x18\x08 \x01(\t\"-\n\x17StreamTrajectoryRequest\x12\x12\n\nrollout_id\x18\x01 \x01(\t\"*\n\x14GetTrajectoryRequest\x12\x12\n\nrollout_id\x18\x01 \x01(\t\"9\n\nTrajectory\x12+\n\x05steps\x18\x01 \x03(\x0b\x32\x1c.openagora.v1.TrajectoryStep\"\xe5\x01\n\rSandboxConfig\x12\r\n\x05image\x18\x01 \x01(\t\x12\x0e\n\x06memory\x18\x02 \x01(\t\x12\x0c\n\x04\x63pus\x18\x03 \x01(\x01\x12:\n\x08\x65nv_vars\x18\x04 \x03(\x0b\x32(.openagora.v1.SandboxConfig.EnvVarsEntry\x12\x11\n\ttask_file\x18\x05 \x01(\x0c\x12\x17\n\x0ftimeout_seconds\x18\x06 \x01(\x05\x12\x0f\n\x07\x63ommand\x18\x07 \x03(\t\x1a.\n\x0c\x45nvVarsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"f\n\nRewardSpec\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x0e\n\x06weight\x18\x02 \x01(\x02\x12\x14\n\x0cverifier_dir\x18\x03 \x01(\t\x12\x0f\n\x07\x63ommand\x18\x04 \x01(\t\x12\x13\n\x0b\x61ggregation\x18\x05 \x01(\t\"\xad\x02\n\x0cVerifyConfig\x12\x0f\n\x07\x63ommand\x18\x01 \x01(\t\x12\x12\n\nlog_parser\x18\x02 \x01(\t\x12\x14\n\x0cpass_to_pass\x18\x03 \x03(\t\x12\x14\n\x0c\x66\x61il_to_pass\x18\x04 \x03(\t\x12\x10\n\x08language\x18\x05 \x01(\t\x12\x11\n\tframework\x18\x06 \x01(\t\x12\x17\n\x0finstall_command\x18\x07 \x01(\t\x12\x18\n\x10\x62\x61seline_command\x18\x08 \x01(\t\x12\x15\n\rpatch_command\x18\t \x01(\t\x12\x17\n\x0ftimeout_seconds\x18\n \x01(\x05\x12\x19\n\x11working_directory\x18\x0b \x01(\t\x12)\n\x07rewards\x18\x0c \x03(\x0b\x32\x18.openagora.v1.RewardSpec\"b\n\x0eTestCaseResult\x12\x0f\n\x07test_id\x18\x01 \x01(\t\x12\x17\n\x0f\x62\x61seline_passed\x18\x02 \x01(\x08\x12\x14\n\x0cpatch_passed\x18\x03 \x01(\x08\x12\x10\n\x08\x63\x61tegory\x18\x04 \x01(\t\"\x83\x02\n\x12VerificationReport\x12\x12\n\x06reward\x18\x01 \x01(\x02\x42\x02\x18\x01\x12\x11\n\tf2p_count\x18\x02 \x01(\x05\x12\x11\n\tp2p_count\x18\x03 \x01(\x05\x12\x11\n\tf2f_count\x18\x04 \x01(\x05\x12\x11\n\tp2f_count\x18\x05 \x01(\x05\x12\x30\n\ntest_cases\x18\x06 \x03(\x0b\x32\x1c.openagora.v1.TestCaseResult\x12\x0e\n\x06stdout\x18\x07 \x01(\t\x12\x0e\n\x06stderr\x18\x08 \x01(\t\x12%\n\x07rewards\x18\t \x03(\x0b\x32\x14.openagora.v1.Reward\x12\x14\n\x0ctotal_reward\x18\n \x01(\x02\x32\x8e\x06\n\x0c\x41renaService\x12X\n\rCreateRollout\x12\".openagora.v1.CreateRolloutRequest\x1a#.openagora.v1.CreateRolloutResponse\x12\x44\n\nGetRollout\x12\x1f.openagora.v1.GetRolloutRequest\x1a\x15.openagora.v1.Rollout\x12R\n\x0bStopRollout\x12 .openagora.v1.StopRolloutRequest\x1a!.openagora.v1.StopRolloutResponse\x12U\n\x0cListRollouts\x12!.openagora.v1.ListRolloutsRequest\x1a\".openagora.v1.ListRolloutsResponse\x12Y\n\x10StreamTrajectory\x12%.openagora.v1.StreamTrajectoryRequest\x1a\x1c.openagora.v1.TrajectoryStep0\x01\x12M\n\rGetTrajectory\x12\".openagora.v1.GetTrajectoryRequest\x1a\x18.openagora.v1.Trajectory\x12U\n\x0cPauseRollout\x12!.openagora.v1.PauseRolloutRequest\x1a\".openagora.v1.PauseRolloutResponse\x12X\n\rResumeRollout\x12\".openagora.v1.ResumeRolloutRequest\x1a#.openagora.v1.ResumeRolloutResponse\x12X\n\rUpdateWeights\x12\".openagora.v1.UpdateWeightsRequest\x1a#.openagora.v1.UpdateWeightsResponseB6Z4github.com/albert-lv/OpenAgora/go/proto/openagora/v1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -48,30 +48,42 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_STOPROLLOUTREQUEST']._serialized_end=467
   _globals['_STOPROLLOUTRESPONSE']._serialized_start=469
   _globals['_STOPROLLOUTRESPONSE']._serialized_end=490
-  _globals['_LISTROLLOUTSREQUEST']._serialized_start=492
-  _globals['_LISTROLLOUTSREQUEST']._serialized_end=552
-  _globals['_LISTROLLOUTSRESPONSE']._serialized_start=554
-  _globals['_LISTROLLOUTSRESPONSE']._serialized_end=617
-  _globals['_ROLLOUT']._serialized_start=620
-  _globals['_ROLLOUT']._serialized_end=858
-  _globals['_STREAMTRAJECTORYREQUEST']._serialized_start=860
-  _globals['_STREAMTRAJECTORYREQUEST']._serialized_end=905
-  _globals['_GETTRAJECTORYREQUEST']._serialized_start=907
-  _globals['_GETTRAJECTORYREQUEST']._serialized_end=949
-  _globals['_TRAJECTORY']._serialized_start=951
-  _globals['_TRAJECTORY']._serialized_end=1008
-  _globals['_SANDBOXCONFIG']._serialized_start=1011
-  _globals['_SANDBOXCONFIG']._serialized_end=1240
-  _globals['_SANDBOXCONFIG_ENVVARSENTRY']._serialized_start=1194
-  _globals['_SANDBOXCONFIG_ENVVARSENTRY']._serialized_end=1240
-  _globals['_REWARDSPEC']._serialized_start=1242
-  _globals['_REWARDSPEC']._serialized_end=1344
-  _globals['_VERIFYCONFIG']._serialized_start=1347
-  _globals['_VERIFYCONFIG']._serialized_end=1648
-  _globals['_TESTCASERESULT']._serialized_start=1650
-  _globals['_TESTCASERESULT']._serialized_end=1748
-  _globals['_VERIFICATIONREPORT']._serialized_start=1751
-  _globals['_VERIFICATIONREPORT']._serialized_end=2010
-  _globals['_ARENASERVICE']._serialized_start=2013
-  _globals['_ARENASERVICE']._serialized_end=2528
+  _globals['_PAUSEROLLOUTREQUEST']._serialized_start=492
+  _globals['_PAUSEROLLOUTREQUEST']._serialized_end=547
+  _globals['_PAUSEROLLOUTRESPONSE']._serialized_start=549
+  _globals['_PAUSEROLLOUTRESPONSE']._serialized_end=571
+  _globals['_RESUMEROLLOUTREQUEST']._serialized_start=573
+  _globals['_RESUMEROLLOUTREQUEST']._serialized_end=615
+  _globals['_RESUMEROLLOUTRESPONSE']._serialized_start=617
+  _globals['_RESUMEROLLOUTRESPONSE']._serialized_end=674
+  _globals['_UPDATEWEIGHTSREQUEST']._serialized_start=676
+  _globals['_UPDATEWEIGHTSREQUEST']._serialized_end=767
+  _globals['_UPDATEWEIGHTSRESPONSE']._serialized_start=769
+  _globals['_UPDATEWEIGHTSRESPONSE']._serialized_end=850
+  _globals['_LISTROLLOUTSREQUEST']._serialized_start=852
+  _globals['_LISTROLLOUTSREQUEST']._serialized_end=912
+  _globals['_LISTROLLOUTSRESPONSE']._serialized_start=914
+  _globals['_LISTROLLOUTSRESPONSE']._serialized_end=977
+  _globals['_ROLLOUT']._serialized_start=980
+  _globals['_ROLLOUT']._serialized_end=1242
+  _globals['_STREAMTRAJECTORYREQUEST']._serialized_start=1244
+  _globals['_STREAMTRAJECTORYREQUEST']._serialized_end=1289
+  _globals['_GETTRAJECTORYREQUEST']._serialized_start=1291
+  _globals['_GETTRAJECTORYREQUEST']._serialized_end=1333
+  _globals['_TRAJECTORY']._serialized_start=1335
+  _globals['_TRAJECTORY']._serialized_end=1392
+  _globals['_SANDBOXCONFIG']._serialized_start=1395
+  _globals['_SANDBOXCONFIG']._serialized_end=1624
+  _globals['_SANDBOXCONFIG_ENVVARSENTRY']._serialized_start=1578
+  _globals['_SANDBOXCONFIG_ENVVARSENTRY']._serialized_end=1624
+  _globals['_REWARDSPEC']._serialized_start=1626
+  _globals['_REWARDSPEC']._serialized_end=1728
+  _globals['_VERIFYCONFIG']._serialized_start=1731
+  _globals['_VERIFYCONFIG']._serialized_end=2032
+  _globals['_TESTCASERESULT']._serialized_start=2034
+  _globals['_TESTCASERESULT']._serialized_end=2132
+  _globals['_VERIFICATIONREPORT']._serialized_start=2135
+  _globals['_VERIFICATIONREPORT']._serialized_end=2394
+  _globals['_ARENASERVICE']._serialized_start=2397
+  _globals['_ARENASERVICE']._serialized_end=3179
 # @@protoc_insertion_point(module_scope)

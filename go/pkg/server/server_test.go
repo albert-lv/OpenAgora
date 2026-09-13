@@ -340,3 +340,147 @@ func (m *mockStream) RecvMsg(msg any) error           { return nil }
 func (m *mockStream) SetHeader(md metadata.MD) error  { return nil }
 func (m *mockStream) SendHeader(md metadata.MD) error { return nil }
 func (m *mockStream) SetTrailer(md metadata.MD)       {}
+
+// blockingVerifyRunner blocks until released, simulating a slow verification.
+type blockingVerifyRunner struct {
+	release chan struct{}
+	report  *verify.VerificationReport
+}
+
+func (m *blockingVerifyRunner) Run(ctx context.Context, provider sandbox.Provider, spec *verify.VerificationSpec, sandboxID string) (*verify.VerificationReport, error) {
+	select {
+	case <-m.release:
+		return m.report, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func createTestRollout(t *testing.T, srv *ArenaServer) string {
+	t.Helper()
+	resp, err := srv.CreateRollout(context.Background(), &arena_pb.CreateRolloutRequest{
+		TaskId:     "task-1",
+		Sandbox:    &arena_pb.SandboxConfig{Image: "test-image"},
+		Verify:     &arena_pb.VerifyConfig{Command: "pytest"},
+		LlmBackend: "http://localhost:8000/v1",
+	})
+	if err != nil {
+		t.Fatalf("CreateRollout failed: %v", err)
+	}
+	return resp.RolloutId
+}
+
+func waitForCondition(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s", what)
+}
+
+func TestAsyncVerify(t *testing.T) {
+	logger := zap.NewNop()
+	sp := newMockSandboxProvider()
+	vr := &blockingVerifyRunner{
+		release: make(chan struct{}),
+		report: &verify.VerificationReport{
+			TotalReward: 0.5,
+			Rewards:     []verify.Reward{{Name: "test", Value: 0.5}},
+		},
+	}
+	srv := New(logger, &ServerConfig{SandboxProvider: sp, VerifyRunner: vr})
+
+	rolloutID := createTestRollout(t, srv)
+
+	// The rollout reaches its terminal generation status without waiting
+	// for verification.
+	waitForCondition(t, "terminal status", func() bool {
+		r, err := srv.GetRollout(context.Background(), &arena_pb.GetRolloutRequest{RolloutId: rolloutID})
+		return err == nil && r.Status == "success"
+	})
+
+	// Verification is still blocked: no report attached yet.
+	r, err := srv.GetRollout(context.Background(), &arena_pb.GetRolloutRequest{RolloutId: rolloutID})
+	if err != nil {
+		t.Fatalf("GetRollout failed: %v", err)
+	}
+	if r.VerificationReport != nil {
+		t.Fatal("expected verification report to be pending")
+	}
+
+	close(vr.release)
+	waitForCondition(t, "verify results", func() bool {
+		r, err := srv.GetRollout(context.Background(), &arena_pb.GetRolloutRequest{RolloutId: rolloutID})
+		return err == nil && r.VerificationReport != nil
+	})
+	r, _ = srv.GetRollout(context.Background(), &arena_pb.GetRolloutRequest{RolloutId: rolloutID})
+	if r.Status != "success" {
+		t.Fatalf("expected status to remain success, got %s", r.Status)
+	}
+	if r.Reward != 0.5 {
+		t.Fatalf("expected reward 0.5, got %f", r.Reward)
+	}
+
+	// Sandbox is stopped and destroyed after verification completes.
+	for id := range sp.created {
+		if !sp.stopped[id] || !sp.destroyed[id] {
+			t.Fatalf("expected sandbox %s stopped and destroyed", id)
+		}
+	}
+}
+
+func TestSyncVerify(t *testing.T) {
+	logger := zap.NewNop()
+	sp := newMockSandboxProvider()
+	vr := &blockingVerifyRunner{
+		release: make(chan struct{}),
+		report:  &verify.VerificationReport{TotalReward: 0.5},
+	}
+	srv := New(logger, &ServerConfig{SandboxProvider: sp, VerifyRunner: vr, SyncVerify: true})
+
+	rolloutID := createTestRollout(t, srv)
+
+	// While verification is blocked the rollout must not reach a terminal
+	// status (legacy inline behavior).
+	time.Sleep(100 * time.Millisecond)
+	r, err := srv.GetRollout(context.Background(), &arena_pb.GetRolloutRequest{RolloutId: rolloutID})
+	if err != nil {
+		t.Fatalf("GetRollout failed: %v", err)
+	}
+	if r.Status != "running" {
+		t.Fatalf("expected running while verify blocked, got %s", r.Status)
+	}
+
+	close(vr.release)
+	waitForCondition(t, "terminal status with reward", func() bool {
+		r, err := srv.GetRollout(context.Background(), &arena_pb.GetRolloutRequest{RolloutId: rolloutID})
+		return err == nil && r.Status == "success" && r.Reward == 0.5
+	})
+}
+
+func TestResolveProxyTimeout(t *testing.T) {
+	logger := zap.NewNop()
+
+	if d := resolveProxyTimeout(logger, 3*time.Minute); d != 3*time.Minute {
+		t.Fatalf("expected configured 3m, got %v", d)
+	}
+
+	t.Setenv("ARENA_PROXY_TIMEOUT", "")
+	if d := resolveProxyTimeout(logger, 0); d != 0 {
+		t.Fatalf("expected 0 when unset, got %v", d)
+	}
+
+	t.Setenv("ARENA_PROXY_TIMEOUT", "45s")
+	if d := resolveProxyTimeout(logger, 0); d != 45*time.Second {
+		t.Fatalf("expected 45s from env, got %v", d)
+	}
+
+	t.Setenv("ARENA_PROXY_TIMEOUT", "bogus")
+	if d := resolveProxyTimeout(logger, 0); d != 0 {
+		t.Fatalf("expected 0 for invalid env, got %v", d)
+	}
+}
